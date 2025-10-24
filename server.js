@@ -389,7 +389,7 @@ const SCHEMA_VALIDATION_RULES = {
       endDate: { type: 'string', format: 'date', recommended: true, docs: 'https://schema.org/endDate' },
       location: { type: 'object', recommended: true, docs: 'https://schema.org/location' },
       organizer: { type: 'object', recommended: true, docs: 'https://schema.org/organizer' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' }
+      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' }, // Added trailing comma
     },
     docs: 'https://schema.org/BusinessEvent'
   }
@@ -2038,57 +2038,74 @@ app.post('/api/analyze', async (req, res) => {
       robotsAnalysis: robotsAnalysis,
       llmAnalysis: llmAnalysis,
       openGraphAnalysis: openGraphAnalysis,
-      aiAnalysis: aiAnalysis,
-      sitemapAnalysis: sitemapAnalysis,
-      faqHowToAnalysis: faqHowToAnalysis,
-      breadcrumbAnalysis: breadcrumbAnalysis,
-      contentStructureAnalysis: contentStructureAnalysis,
-      jsonLdGraphAnalysis: jsonLdGraphAnalysis,
-      performanceAnalysis: performanceAnalysis,
-      totalFound: jsonLd.length + microdata.length + rdfa.length,
-      totalMatched: matched.length
-    });
-
-  } catch (error) {
-    console.error('Analysis error:', error.message);
-    console.error('Full error:', error);
-
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return res.status(400).json({ error: 'Unable to reach the specified URL. Please check the URL and try again.' });
-    }
-
-    if (error.code === 'ETIMEDOUT') {
-      return res.status(408).json({ error: 'Request timed out. The website took too long to respond.' });
-    }
-
-    if (error.response && error.response.status === 403) {
-      return res.status(403).json({ error: 'Access denied by the website. The site may be blocking automated requests.' });
-    }
-
-    if (error.response && error.response.status === 404) {
-      return res.status(404).json({ error: 'Website not found (404 error).' });
-    }
-
-    if (error.response && error.response.status === 429) {
-      return res.status(429).json({ error: 'Too many requests. The website is rate limiting our requests.' });
-    }
-
-    if (error.code === 'ECONNRESET' || error.code === 'EPROTO') {
-      return res.status(400).json({ error: 'Connection error. The website may be using an incompatible protocol or SSL configuration.' });
-    }
-
-    // Log the specific error for debugging
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response headers:', error.response.headers);
-      console.error('Response data:', error.response.data);
-    }
-
-    res.status(500).json({ error: `An error occurred while analyzing the website: ${error.message}. Please try again.` });
   }
 });
 
-// Serve the main HTML file
+// Check Microdata
+microdata.forEach((item, index) => {
+  if (matchesTargetSchemas(item.type)) {
+    const validation = validateSchema(item.properties, item.type);
+    matched.push({
+      type: 'Microdata',
+      schemaType: item.type,
+      data: item,
+      index: index,
+      validation: validation
+    });
+  }
+});
+
+// Check RDFa
+rdfa.forEach((item, index) => {
+  if (matchesTargetSchemas(item.type)) {
+    const validation = validateSchema(item.properties, item.type);
+    matched.push({
+      type: 'RDFa',
+      schemaType: item.type,
+      data: item,
+      index: index,
+      validation: validation
+    });
+  }
+});
+
+// Calculate overall validation score
+const totalValidationScore = matched.reduce((sum, match) => sum + match.validation.score, 0);
+const totalMaxScore = matched.reduce((sum, match) => sum + match.validation.maxScore, 0);
+const averageValidationScore = matched.length > 0 ? Math.round(totalValidationScore / matched.length) : 0;
+
+// Send response
+return res.json({
+  url: url,
+  jsonLd: jsonLd,
+  microdata: microdata,
+  rdfa: rdfa,
+  matched: matched,
+  validation: {
+    averageScore: averageValidationScore,
+    totalScore: totalValidationScore,
+    totalMaxScore: totalMaxScore,
+    schemaCount: matched.length
+  },
+  robotsAnalysis: robotsAnalysis,
+  llmAnalysis: llmAnalysis,
+  openGraphAnalysis: openGraphAnalysis,
+  aiAnalysis: aiAnalysis,
+  sitemapAnalysis: sitemapAnalysis,
+  faqHowToAnalysis: faqHowToAnalysis,
+  breadcrumbAnalysis: breadcrumbAnalysis,
+  contentStructureAnalysis: contentStructureAnalysis,
+  jsonLdGraphAnalysis: jsonLdGraphAnalysis,
+  performanceAnalysis: performanceAnalysis,
+  totalFound: jsonLd.length + microdata.length + rdfa.length,
+  totalMatched: matched.length
+});
+
+} catch (error) {
+  console.error('API Analysis error:', error);
+  return res.status(500).json({ error: `Server error: ${error.message}` });
+}
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
