@@ -4,22 +4,31 @@ const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+module.exports = function createApp() {
+  const app = express();
+  const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'hotel-website')));
+  // Middleware
+  app.use(cors());
+  app.use(express.json());
+  app.use(express.static(path.join(__dirname, 'public')));
 
-// Target schemas to match
-const TARGET_SCHEMAS = [
+  // Target schemas to match
+  const TARGET_SCHEMAS = [
   'Hotel',
   'LodgingBusiness',
   'FAQPage',
   'Organization',
   'Review',
-  'AggregateRating'
+  'AggregateRating',
+  'LocalBusiness',
+  'Place',
+  'Product',
+  'Service',
+  'JobPosting',
+  'Restaurant',
+  'Event',
+  'BusinessEvent'
 ];
 
 // Extract JSON-LD from HTML
@@ -261,10 +270,129 @@ const SCHEMA_VALIDATION_RULES = {
       reviewCount: { type: 'number', required: true, docs: 'https://schema.org/reviewCount' },
       bestRating: { type: 'number', recommended: true, docs: 'https://schema.org/bestRating' },
       worstRating: { type: 'number', recommended: true, docs: 'https://schema.org/worstRating' }
+  },
+  'LocalBusiness': {
+    required: ['name', 'address'],
+    recommended: ['telephone', 'description', 'image', 'url', 'priceRange', 'openingHours'],
+    properties: {
+      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
+      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
+      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
+      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
+      telephone: { type: 'string', recommended: true, docs: 'https://schema.org/telephone' },
+      address: { type: 'object', required: true, docs: 'https://schema.org/address' },
+      priceRange: { type: 'string', recommended: true, docs: 'https://schema.org/priceRange' },
+      openingHours: { type: 'string', recommended: true, docs: 'https://schema.org/openingHours' },
+      geo: { type: 'object', recommended: true, docs: 'https://schema.org/geo' },
+      sameAs: { type: 'array', recommended: true, docs: 'https://schema.org/sameAs' }
     },
-    docs: 'https://schema.org/AggregateRating'
+    docs: 'https://schema.org/LocalBusiness'
+  },
+  'Place': {
+    required: ['name'],
+    recommended: ['address', 'description', 'image', 'url', 'telephone'],
+    properties: {
+      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
+      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
+      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
+      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
+      telephone: { type: 'string', recommended: true, docs: 'https://schema.org/telephone' },
+      address: { type: 'object', recommended: true, docs: 'https://schema.org/address' },
+      geo: { type: 'object', recommended: true, docs: 'https://schema.org/geo' }
+    },
+    docs: 'https://schema.org/Place'
+  },
+  'Product': {
+    required: ['name'],
+    recommended: ['description', 'image', 'offers', 'category', 'brand'],
+    properties: {
+      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
+      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
+      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
+      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
+      category: { type: 'string', recommended: true, docs: 'https://schema.org/category' },
+      brand: { type: 'object', recommended: true, docs: 'https://schema.org/brand' },
+      offers: { type: 'object', recommended: true, docs: 'https://schema.org/offers' },
+      priceRange: { type: 'string', recommended: true, docs: 'https://schema.org/priceRange' }
+    },
+    docs: 'https://schema.org/Product'
+  },
+  'Service': {
+    required: ['name', 'provider'],
+    recommended: ['description', 'image', 'offers', 'serviceType'],
+    properties: {
+      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
+      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
+      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
+      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
+      serviceType: { type: 'string', recommended: true, docs: 'https://schema.org/serviceType' },
+      provider: { type: 'object', required: true, docs: 'https://schema.org/provider' },
+      offers: { type: 'object', recommended: true, docs: 'https://schema.org/offers' },
+      areaServed: { type: 'object', recommended: true, docs: 'https://schema.org/areaServed' }
+    },
+    docs: 'https://schema.org/Service'
+  },
+  'JobPosting': {
+    required: ['title', 'hiringOrganization'],
+    recommended: ['description', 'datePosted', 'employmentType', 'jobLocation'],
+    properties: {
+      title: { type: 'string', required: true, docs: 'https://schema.org/title' },
+      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
+      datePosted: { type: 'string', format: 'date', recommended: true, docs: 'https://schema.org/datePosted' },
+      employmentType: { type: 'string', recommended: true, docs: 'https://schema.org/employmentType' },
+      hiringOrganization: { type: 'object', required: true, docs: 'https://schema.org/hiringOrganization' },
+      jobLocation: { type: 'object', recommended: true, docs: 'https://schema.org/jobLocation' },
+      salaryCurrency: { type: 'string', recommended: true, docs: 'https://schema.org/salaryCurrency' }
+    },
+    docs: 'https://schema.org/JobPosting'
+  },
+  'Restaurant': {
+    required: ['name', 'address'],
+    recommended: ['telephone', 'description', 'image', 'priceRange', 'servesCuisine', 'menu'],
+    properties: {
+      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
+      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
+      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
+      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
+      telephone: { type: 'string', recommended: true, docs: 'https://schema.org/telephone' },
+      address: { type: 'object', required: true, docs: 'https://schema.org/address' },
+      priceRange: { type: 'string', recommended: true, docs: 'https://schema.org/priceRange' },
+      servesCuisine: { type: 'string', recommended: true, docs: 'https://schema.org/servesCuisine' },
+      menu: { type: 'url', recommended: true, docs: 'https://schema.org/menu' },
+      acceptsReservations: { type: 'boolean', recommended: true, docs: 'https://schema.org/acceptsReservations' }
+    },
+    docs: 'https://schema.org/Restaurant'
+  },
+  'Event': {
+    required: ['name', 'startDate'],
+    recommended: ['description', 'endDate', 'location', 'offers', 'image'],
+    properties: {
+      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
+      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
+      startDate: { type: 'string', format: 'date', required: true, docs: 'https://schema.org/startDate' },
+      endDate: { type: 'string', format: 'date', recommended: true, docs: 'https://schema.org/endDate' },
+      location: { type: 'object', recommended: true, docs: 'https://schema.org/location' },
+      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
+      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
+      offers: { type: 'object', recommended: true, docs: 'https://schema.org/offers' },
+      eventStatus: { type: 'string', recommended: true, docs: 'https://schema.org/eventStatus' }
+    },
+    docs: 'https://schema.org/Event'
+  },
+  'BusinessEvent': {
+    required: ['name', 'startDate'],
+    recommended: ['description', 'endDate', 'location', 'organizer'],
+    properties: {
+      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
+      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
+      startDate: { type: 'string', format: 'date', required: true, docs: 'https://schema.org/startDate' },
+      endDate: { type: 'string', format: 'date', recommended: true, docs: 'https://schema.org/endDate' },
+      location: { type: 'object', recommended: true, docs: 'https://schema.org/location' },
+      organizer: { type: 'object', recommended: true, docs: 'https://schema.org/organizer' },
+      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' }
+    },
+    docs: 'https://schema.org/BusinessEvent'
   }
-};
 
 // Validate a single schema object
 function validateSchema(schema, schemaType) {
@@ -1396,7 +1524,216 @@ function analyzeContentStructure($) {
   return analysis;
 }
 
-// Analyze advanced JSON-LD @graph structures
+// Analyze Core Web Vitals and page speed (simulated based on HTML structure)
+function analyzePerformance($, html, url) {
+  const analysis = {
+    score: 0,
+    maxScore: 100,
+    issues: [],
+    recommendations: [],
+    coreWebVitals: {
+      LCP: { value: '0s', score: 0, status: 'unknown' },
+      FID: { value: '0ms', score: 0, status: 'unknown' },
+      CLS: { value: '0', score: 0, status: 'unknown' }
+    },
+    pageSpeed: {
+      loadTime: 'unknown',
+      size: 'unknown',
+      requests: 0,
+      score: 0
+    },
+    mobileFriendly: false,
+    technicalSEO: {
+      brokenLinks: 0,
+      redirects: 0,
+      statusCodes: {},
+      score: 0,
+      canonicalFound: false,
+      internalLinks: 0
+    }
+  };
+
+  // Analyze HTML size and complexity
+  const htmlSize = html.length;
+  analysis.pageSpeed.size = `${Math.round(htmlSize / 1024)}KB`;
+
+  // Count external resources (images, scripts, stylesheets)
+  const images = $('img').length;
+  const scripts = $('script').length;
+  const stylesheets = $('link[rel="stylesheet"]').length;
+  const totalResources = images + scripts + stylesheets;
+  analysis.pageSpeed.requests = totalResources;
+
+  // Page speed scoring based on resource count and HTML size
+  if (htmlSize < 50000) { // < 50KB
+    analysis.pageSpeed.score += 25;
+    analysis.pageSpeed.loadTime = '< 1s';
+  } else if (htmlSize < 100000) { // < 100KB
+    analysis.pageSpeed.score += 15;
+    analysis.pageSpeed.loadTime = '1-2s';
+  } else if (htmlSize < 200000) { // < 200KB
+    analysis.pageSpeed.score += 10;
+    analysis.pageSpeed.loadTime = '2-3s';
+  } else {
+    analysis.pageSpeed.loadTime = '> 3s';
+    analysis.issues.push('Large HTML size - consider reducing content or using compression');
+  }
+
+  // Resource optimization scoring
+  if (totalResources < 20) {
+    analysis.pageSpeed.score += 25; // Optimized resource count
+  } else if (totalResources < 50) {
+    analysis.pageSpeed.score += 15; // Good resource count
+  } else if (totalResources < 100) {
+    analysis.pageSpeed.score += 5; // Acceptable resource count
+  } else {
+    analysis.issues.push('Too many resources - consider combining files or lazy loading');
+  }
+
+  // Core Web Vitals estimation based on HTML structure
+  // LCP (Largest Contentful Paint) - estimate based on image count and size
+  if (images === 0) {
+    analysis.coreWebVitals.LCP.value = '1.2s';
+    analysis.coreWebVitals.LCP.score = 90;
+    analysis.coreWebVitals.LCP.status = 'good';
+    analysis.score += 15;
+  } else if (images <= 5) {
+    analysis.coreWebVitals.LCP.value = '2.1s';
+    analysis.coreWebVitals.LCP.score = 75;
+    analysis.coreWebVitals.LCP.status = 'needs-improvement';
+    analysis.score += 10;
+  } else {
+    analysis.coreWebVitals.LCP.value = '3.8s';
+    analysis.coreWebVitals.LCP.score = 40;
+    analysis.coreWebVitals.LCP.status = 'poor';
+    analysis.issues.push('Multiple images may impact LCP - consider image optimization');
+  }
+
+  // FID (First Input Delay) - estimate based on JavaScript
+  if (scripts <= 3) {
+    analysis.coreWebVitals.FID.value = '45ms';
+    analysis.coreWebVitals.FID.score = 95;
+    analysis.coreWebVitals.FID.status = 'good';
+    analysis.score += 15;
+  } else if (scripts <= 8) {
+    analysis.coreWebVitals.FID.value = '120ms';
+    analysis.coreWebVitals.FID.score = 65;
+    analysis.coreWebVitals.FID.status = 'needs-improvement';
+    analysis.score += 8;
+  } else {
+    analysis.coreWebVitals.FID.value = '280ms';
+    analysis.coreWebVitals.FID.score = 30;
+    analysis.coreWebVitals.FID.status = 'poor';
+    analysis.issues.push('Multiple scripts may impact FID - consider code splitting');
+  }
+
+  // CLS (Cumulative Layout Shift) - estimate based on content structure
+  const hasFixedDimensions = $('img[width][height], [style*="width"][style*="height"]').length;
+  const hasViewport = $('meta[name="viewport"]').length;
+
+  if (hasFixedDimensions > 0 && hasViewport > 0) {
+    analysis.coreWebVitals.CLS.value = '0.05';
+    analysis.coreWebVitals.CLS.score = 95;
+    analysis.coreWebVitals.CLS.status = 'good';
+    analysis.score += 15;
+  } else if (hasViewport > 0) {
+    analysis.coreWebVitals.CLS.value = '0.15';
+    analysis.coreWebVitals.CLS.score = 65;
+    analysis.coreWebVitals.CLS.status = 'needs-improvement';
+    analysis.score += 8;
+  } else {
+    analysis.coreWebVitals.CLS.value = '0.35';
+    analysis.coreWebVitals.CLS.score = 20;
+    analysis.coreWebVitals.CLS.status = 'poor';
+    analysis.issues.push('Missing viewport meta tag - essential for mobile performance');
+  }
+
+  // Mobile-friendliness analysis
+  analysis.mobileFriendly = hasViewport > 0;
+  if (analysis.mobileFriendly) {
+    analysis.score += 15;
+    analysis.technicalSEO.score += 20;
+
+    // Check for mobile-specific optimizations
+    if ($('meta[name="theme-color"]').length > 0) {
+      analysis.score += 5;
+      analysis.technicalSEO.score += 10;
+    }
+
+    if ($('link[rel="manifest"]').length > 0) {
+      analysis.score += 5;
+      analysis.technicalSEO.score += 10;
+    }
+  } else {
+    analysis.issues.push('Missing viewport meta tag - critical for mobile SEO');
+    analysis.recommendations.push('Add <meta name="viewport" content="width=device-width, initial-scale=1.0">');
+  }
+
+  // Technical SEO analysis
+  // Check for meta robots
+  const robotsMeta = $('meta[name="robots"]');
+  if (robotsMeta.length > 0) {
+    const robotsContent = robotsMeta.attr('content');
+    if (robotsContent && !robotsContent.includes('noindex') && !robotsContent.includes('nofollow')) {
+      analysis.technicalSEO.score += 20;
+      analysis.score += 10;
+    } else {
+      analysis.issues.push('Robots meta tag may be blocking search engines');
+    }
+  }
+
+  // Check for structured data density
+  const jsonLdCount = $('script[type="application/ld+json"]').length;
+  const microdataCount = $('[itemtype]').length;
+  const rdfaCount = $('[typeof]').length;
+
+  if (jsonLdCount > 0 || microdataCount > 0 || rdfaCount > 0) {
+    analysis.technicalSEO.score += 20;
+    analysis.score += 10;
+  } else {
+    analysis.issues.push('No structured data found - missing SEO opportunities');
+  }
+
+  // Check for external links
+  const externalLinks = $('a[href^="http"]:not([href^="' + url + '"])').length;
+  if (externalLinks > 0 && externalLinks < 10) {
+    analysis.technicalSEO.score += 10;
+  } else if (externalLinks >= 10) {
+    analysis.technicalSEO.score += 5; // Good external linking
+  }
+
+  // Performance recommendations
+  if (scripts > 5) {
+    analysis.recommendations.push('Consider reducing JavaScript files or using code splitting');
+  }
+
+  if (stylesheets > 3) {
+    analysis.recommendations.push('Consider combining CSS files or using critical CSS');
+  }
+
+  if (images > 10) {
+    analysis.recommendations.push('Consider image optimization and lazy loading');
+  }
+
+  // Mobile recommendations
+  if (!analysis.mobileFriendly) {
+    analysis.recommendations.push('Implement responsive design for mobile SEO');
+  }
+
+  if (analysis.coreWebVitals.LCP.status === 'poor') {
+    analysis.recommendations.push('Optimize Largest Contentful Paint (aim for < 2.5s)');
+  }
+
+  if (analysis.coreWebVitals.FID.status === 'poor') {
+    analysis.recommendations.push('Reduce First Input Delay (aim for < 100ms)');
+  }
+
+  if (analysis.coreWebVitals.CLS.status === 'poor') {
+    analysis.recommendations.push('Minimize Cumulative Layout Shift (aim for < 0.1)');
+  }
+
+  return analysis;
+}
 function analyzeJsonLdGraph(jsonLd) {
   const analysis = {
     score: 0,
@@ -1603,6 +1940,7 @@ app.post('/api/analyze', async (req, res) => {
     let breadcrumbAnalysis = null;
     let contentStructureAnalysis = null;
     let jsonLdGraphAnalysis = null;
+    let performanceAnalysis = null;
 
     try {
       faqHowToAnalysis = analyzeFaqHowToSchema(jsonLd, microdata, rdfa);
@@ -1626,6 +1964,12 @@ app.post('/api/analyze', async (req, res) => {
       jsonLdGraphAnalysis = analyzeJsonLdGraph(jsonLd);
     } catch (error) {
       console.error('JSON-LD graph analysis failed:', error.message);
+    }
+
+    try {
+      performanceAnalysis = analyzePerformance($, html, url);
+    } catch (error) {
+      console.error('Performance analysis failed:', error.message);
     }
     const matched = [];
 
@@ -1699,6 +2043,7 @@ app.post('/api/analyze', async (req, res) => {
       breadcrumbAnalysis: breadcrumbAnalysis,
       contentStructureAnalysis: contentStructureAnalysis,
       jsonLdGraphAnalysis: jsonLdGraphAnalysis,
+      performanceAnalysis: performanceAnalysis,
       totalFound: jsonLd.length + microdata.length + rdfa.length,
       totalMatched: matched.length
     });

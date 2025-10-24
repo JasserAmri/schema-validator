@@ -1025,6 +1025,65 @@
                             <div class="analysis-recommendations" id="graphRecommendations"></div>
                         </div>
                     </div>
+                <div class="performance-technical-analysis" id="performanceTechnicalAnalysis">
+                    <h3>⚡ Performance & Technical SEO</h3>
+                    <div class="analysis-grid">
+                        <div class="analysis-item core-web-vitals">
+                            <div class="analysis-score">
+                                <span class="analysis-score-number" id="performanceScore">0</span>
+                                <span class="analysis-score" id="performanceScoreClass">/100</span>
+                            </div>
+                            <h4>Core Web Vitals</h4>
+                            <div class="analysis-details">
+                                <div id="performanceDetails"></div>
+                                <div class="core-web-vitals" id="coreWebVitals" style="display: none;"></div>
+                            </div>
+                            <div class="analysis-issues" id="performanceIssues"></div>
+                            <div class="analysis-recommendations" id="performanceRecommendations"></div>
+                        </div>
+
+                        <div class="analysis-item technical-seo">
+                            <div class="analysis-score">
+                                <span class="analysis-score-number" id="technicalScore">0</span>
+                                <span class="analysis-score" id="technicalScoreClass">/100</span>
+                            </div>
+                            <h4>Technical SEO</h4>
+                            <div class="analysis-details">
+                                <div id="technicalDetails"></div>
+                                <div class="technical-stats" id="technicalStats" style="display: none;"></div>
+                            </div>
+                            <div class="analysis-issues" id="technicalIssues"></div>
+                            <div class="analysis-recommendations" id="technicalRecommendations"></div>
+                        </div>
+
+                        <div class="analysis-item mobile">
+                            <div class="analysis-score">
+                                <span class="analysis-score-number" id="mobileScore">0</span>
+                                <span class="analysis-score" id="mobileScoreClass">/100</span>
+                            </div>
+                            <h4>Mobile Optimization</h4>
+                            <div class="analysis-details">
+                                <div id="mobileDetails"></div>
+                                <div class="mobile-stats" id="mobileStats" style="display: none;"></div>
+                            </div>
+                            <div class="analysis-issues" id="mobileIssues"></div>
+                            <div class="analysis-recommendations" id="mobileRecommendations"></div>
+                        </div>
+
+                        <div class="analysis-item page-speed">
+                            <div class="analysis-score">
+                                <span class="analysis-score-number" id="speedScore">0</span>
+                                <span class="analysis-score" id="speedScoreClass">/100</span>
+                            </div>
+                            <h4>Page Speed</h4>
+                            <div class="analysis-details">
+                                <div id="speedDetails"></div>
+                                <div class="speed-stats" id="speedStats" style="display: none;"></div>
+                            </div>
+                            <div class="analysis-issues" id="speedIssues"></div>
+                            <div class="analysis-recommendations" id="speedRecommendations"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1310,7 +1369,7 @@
 
             // Update AEO/GEO analysis
             const aeoGeoAnalysis = document.getElementById('aeoGeoAnalysis');
-            if (data.faqHowToAnalysis || data.breadcrumbAnalysis || data.contentStructureAnalysis || data.jsonLdGraphAnalysis) {
+            if (data.faqHowToAnalysis || data.breadcrumbAnalysis || data.contentStructureAnalysis || data.jsonLdGraphAnalysis || data.performanceAnalysis) {
                 aeoGeoAnalysis.style.display = 'block';
 
                 // FAQ/HowTo analysis
@@ -1464,9 +1523,122 @@
                     const graphRecommendations = document.getElementById('graphRecommendations');
                     graphRecommendations.innerHTML = data.jsonLdGraphAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
                 }
-            } else {
-                aeoGeoAnalysis.style.display = 'none';
-            }
+
+                // Performance & Technical SEO analysis
+                if (data.performanceAnalysis) {
+                    const performanceScore = data.performanceAnalysis.score;
+                    const performanceScoreClass = performanceScore >= 80 ? 'excellent' : performanceScore >= 60 ? 'good' : performanceScore >= 40 ? 'fair' : 'poor';
+
+                    document.getElementById('performanceScore').textContent = performanceScore;
+                    document.getElementById('performanceScoreClass').textContent = `/${data.performanceAnalysis.maxScore}`;
+                    document.getElementById('performanceScoreClass').className = `analysis-score ${performanceScoreClass}`;
+
+                    const performanceDetails = document.getElementById('performanceDetails');
+                    performanceDetails.innerHTML = `
+                        <strong>Page Size:</strong> ${data.performanceAnalysis.pageSpeed.size}<br>
+                        <strong>Load Time:</strong> ${data.performanceAnalysis.pageSpeed.loadTime}<br>
+                        <strong>Resources:</strong> ${data.performanceAnalysis.pageSpeed.requests} files
+                    `;
+
+                    // Core Web Vitals display
+                    const coreWebVitals = document.getElementById('coreWebVitals');
+                    if (data.performanceAnalysis.coreWebVitals) {
+                        coreWebVitals.style.display = 'grid';
+                        coreWebVitals.innerHTML = `
+                            <div class="vital-metric ${data.performanceAnalysis.coreWebVitals.LCP.status}">
+                                <span class="metric-name">LCP</span>
+                                <span class="metric-value">${data.performanceAnalysis.coreWebVitals.LCP.value}</span>
+                                <span class="metric-score">${data.performanceAnalysis.coreWebVitals.LCP.score}/100</span>
+                            </div>
+                            <div class="vital-metric ${data.performanceAnalysis.coreWebVitals.FID.status}">
+                                <span class="metric-name">FID</span>
+                                <span class="metric-value">${data.performanceAnalysis.coreWebVitals.FID.value}</span>
+                                <span class="metric-score">${data.performanceAnalysis.coreWebVitals.FID.score}/100</span>
+                            </div>
+                            <div class="vital-metric ${data.performanceAnalysis.coreWebVitals.CLS.status}">
+                                <span class="metric-name">CLS</span>
+                                <span class="metric-value">${data.performanceAnalysis.coreWebVitals.CLS.value}</span>
+                                <span class="metric-score">${data.performanceAnalysis.coreWebVitals.CLS.score}/100</span>
+                            </div>
+                        `;
+                    }
+
+                    const performanceIssues = document.getElementById('performanceIssues');
+                    performanceIssues.innerHTML = data.performanceAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
+
+                    const performanceRecommendations = document.getElementById('performanceRecommendations');
+                    performanceRecommendations.innerHTML = data.performanceAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
+
+                    // Technical SEO analysis
+                    const technicalScore = data.performanceAnalysis.technicalSEO.score;
+                    const technicalScoreClass = technicalScore >= 80 ? 'excellent' : technicalScore >= 60 ? 'good' : technicalScore >= 40 ? 'fair' : 'poor';
+
+                    document.getElementById('technicalScore').textContent = technicalScore;
+                    document.getElementById('technicalScoreClass').textContent = '/100';
+                    document.getElementById('technicalScoreClass').className = `analysis-score ${technicalScoreClass}`;
+
+                    const technicalDetails = document.getElementById('technicalDetails');
+                    technicalDetails.innerHTML = `
+                        <strong>Mobile Friendly:</strong> ${data.performanceAnalysis.mobileFriendly ? '✅ Yes' : '❌ No'}<br>
+                        <strong>Technical SEO Score:</strong> ${data.performanceAnalysis.technicalSEO.score}/100<br>
+                        <strong>Canonical URL:</strong> ${data.performanceAnalysis.technicalSEO.canonicalFound ? '✅ Yes' : '❌ No'}
+                    `;
+
+                    const technicalIssues = document.getElementById('technicalIssues');
+                    technicalIssues.innerHTML = data.performanceAnalysis.issues ? data.performanceAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('') : '';
+
+                    const technicalRecommendations = document.getElementById('technicalRecommendations');
+                    technicalRecommendations.innerHTML = data.performanceAnalysis.recommendations ? data.performanceAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('') : '';
+
+                    // Mobile optimization analysis
+                    const mobileScore = data.performanceAnalysis.mobileFriendly ? 90 : 30;
+                    const mobileScoreClass = mobileScore >= 80 ? 'excellent' : mobileScore >= 60 ? 'good' : mobileScore >= 40 ? 'fair' : 'poor';
+
+                    document.getElementById('mobileScore').textContent = mobileScore;
+                    document.getElementById('mobileScoreClass').textContent = '/100';
+                    document.getElementById('mobileScoreClass').className = `analysis-score ${mobileScoreClass}`;
+
+                    const mobileDetails = document.getElementById('mobileDetails');
+                    mobileDetails.innerHTML = `
+                        <strong>Responsive Design:</strong> ${data.performanceAnalysis.mobileFriendly ? '✅ Yes' : '❌ No'}<br>
+                        <strong>Viewport Tag:</strong> ${data.performanceAnalysis.mobileFriendly ? '✅ Present' : '❌ Missing'}<br>
+                        <strong>Mobile Score:</strong> ${mobileScore}/100
+                    `;
+
+                    const mobileIssues = document.getElementById('mobileIssues');
+                    mobileIssues.innerHTML = data.performanceAnalysis.mobileFriendly ? '' : '<div class="analysis-issue">Missing mobile optimization - critical for SEO</div>';
+
+                    const mobileRecommendations = document.getElementById('mobileRecommendations');
+                    mobileRecommendations.innerHTML = data.performanceAnalysis.mobileFriendly ? '' : '<div class="analysis-recommendation">Implement responsive design and add viewport meta tag</div>';
+
+                    // Page speed analysis
+                    const speedScore = data.performanceAnalysis.pageSpeed.score;
+                    const speedScoreClass = speedScore >= 80 ? 'excellent' : speedScore >= 60 ? 'good' : speedScore >= 40 ? 'fair' : 'poor';
+
+                    document.getElementById('speedScore').textContent = speedScore;
+                    document.getElementById('speedScoreClass').textContent = '/100';
+                    document.getElementById('speedScoreClass').className = `analysis-score ${speedScoreClass}`;
+
+                    const speedDetails = document.getElementById('speedDetails');
+                    speedDetails.innerHTML = `
+                        <strong>HTML Size:</strong> ${data.performanceAnalysis.pageSpeed.size}<br>
+                        <strong>Load Time:</strong> ${data.performanceAnalysis.pageSpeed.loadTime}<br>
+                        <strong>Resources:</strong> ${data.performanceAnalysis.pageSpeed.requests} files
+                    `;
+
+                    const speedIssues = document.getElementById('speedIssues');
+                    speedIssues.innerHTML = data.performanceAnalysis.issues ? data.performanceAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('') : '';
+
+                    const speedRecommendations = document.getElementById('speedRecommendations');
+                    speedRecommendations.innerHTML = data.performanceAnalysis.recommendations ? data.performanceAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('') : '';
+
+                    // Show the performance section
+                    const performanceTechnicalAnalysis = document.getElementById('performanceTechnicalAnalysis');
+                    performanceTechnicalAnalysis.style.display = 'block';
+                } else {
+                    const performanceTechnicalAnalysis = document.getElementById('performanceTechnicalAnalysis');
+                    performanceTechnicalAnalysis.style.display = 'none';
+                }
             schemaResults.innerHTML = '';
 
             if (data.totalFound === 0) {
