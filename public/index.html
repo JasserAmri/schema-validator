@@ -1,1846 +1,472 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Schema.org Validator</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            color: white;
-        }
-
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
-
-        .input-section {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
-        }
-
-        .input-group {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
-
-        .url-input {
-            flex: 1;
-            padding: 15px;
-            border: 2px solid #e1e5e9;
-            border-radius: 10px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-
-        .url-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .analyze-btn {
-            padding: 15px 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .analyze-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        }
-
-        .analyze-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .loading {
-            display: none;
-            text-align: center;
-            margin: 20px 0;
-        }
-
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .results {
-            display: none;
-        }
-
-        .summary {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        .summary-stats {
-            display: flex;
-            gap: 30px;
-            flex-wrap: wrap;
-        }
-
-        .stat {
-            text-align: center;
-        }
-
-        .stat-number {
-            font-size: 2em;
-            font-weight: bold;
-            color: #667eea;
-        }
-
-        .stat-label {
-            font-size: 0.9em;
-            color: #666;
-            margin-top: 5px;
-        }
-
-        .validation-score {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 4px 10px;
-            border-radius: 15px;
-            font-size: 0.8em;
-            font-weight: 600;
-        }
-
-        .validation-score.excellent {
-            background: #4CAF50;
-            color: white;
-        }
-
-        .validation-score.good {
-            background: #8BC34A;
-            color: white;
-        }
-
-        .validation-score.fair {
-            background: #FFC107;
-            color: #333;
-        }
-
-        .validation-score.poor {
-            background: #F44336;
-            color: white;
-        }
-
-        .validation-details {
-            margin-top: 10px;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 5px;
-            border-left: 3px solid #667eea;
-        }
-
-        .validation-issues {
-            margin-bottom: 10px;
-        }
-
-        .validation-issue {
-            color: #dc3545;
-            font-size: 0.85em;
-            margin: 3px 0;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .validation-issue::before {
-            content: "⚠️";
-        }
-
-        .validation-recommendation {
-            color: #28a745;
-            font-size: 0.85em;
-            margin: 3px 0;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .validation-recommendation::before {
-            content: "💡";
-        }
-
-        .validation-recommendation a {
-            color: #007bff;
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        .validation-recommendation a:hover {
-            text-decoration: underline;
-        }
-
-        .validation-issue {
-            color: #dc3545;
-            font-size: 0.85em;
-            margin: 3px 0;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .validation-issue::before {
-            content: "⚠️";
-        }
-
-        .validation-issue a {
-            color: #dc3545;
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        .validation-issue a:hover {
-            text-decoration: underline;
-        }
-
-        .schema-docs-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 3px;
-            color: #6c757d;
-            font-size: 0.8em;
-            margin-left: 10px;
-        }
-
-        .schema-docs-link a {
-            color: #6c757d;
-            text-decoration: none;
-        }
-
-        .schema-docs-link a:hover {
-            color: #007bff;
-            text-decoration: underline;
-        }
-
-        .validation-summary {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-            border: 2px solid #e9ecef;
-        }
-
-        .validation-summary.valid {
-            border-color: #4CAF50;
-        }
-
-        .validation-summary.invalid {
-            border-color: #F44336;
-        }
-
-        .validation-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        .validation-stat {
-            text-align: center;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 10px;
-        }
-
-        .validation-stat-number {
-            font-size: 1.8em;
-            font-weight: bold;
-            color: #667eea;
-            display: block;
-        }
-
-        .validation-stat-label {
-            font-size: 0.9em;
-            color: #666;
-            margin-top: 5px;
-        }
-
-        .ai-seo-analysis {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-            border: 2px solid #e9ecef;
-        }
-
-        .ai-seo-analysis h3 {
-            margin-top: 0;
-            color: #667eea;
-            font-size: 1.3em;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .analysis-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 15px;
-        }
-
-        .analysis-item {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 15px;
-            border-left: 4px solid #667eea;
-        }
-
-        .analysis-item.robots {
-            border-left-color: #28a745;
-        }
-
-        .analysis-item.llm {
-            border-left-color: #007bff;
-        }
-
-        .analysis-item.opengraph {
-            border-left-color: #ffc107;
-        }
-
-        .analysis-item.ai {
-            border-left-color: #6f42c1;
-        }
-
-        .analysis-item.sitemap {
-            border-left-color: #17a2b8;
-        }
-
-        .social-coverage {
-            margin: 10px 0;
-        }
-
-        .social-platform {
-            display: inline-block;
-            background: #28a745;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.8em;
-            margin: 2px;
-        }
-
-        .hotel-properties {
-            background: #fff3cd;
-            border-radius: 5px;
-            padding: 8px;
-            margin: 8px 0;
-            font-size: 0.85em;
-        }
-
-        .hotel-property {
-            display: flex;
-            justify-content: space-between;
-            margin: 3px 0;
-            padding: 2px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        .hotel-property:last-child {
-            border-bottom: none;
-        }
-
-        .property-name {
-            font-weight: 500;
-            color: #333;
-        }
-
-        .property-value {
-            color: #666;
-        }
-
-        .sitemap-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 10px;
-            margin: 10px 0;
-        }
-
-        .sitemap-stat {
-            background: #e8f5e8;
-            padding: 8px;
-            border-radius: 5px;
-            text-align: center;
-        }
-
-        .sitemap-stat-number {
-            font-weight: bold;
-            color: #28a745;
-            display: block;
-        }
-
-        .analysis-item.faq-howto {
-            border-left-color: #28a745;
-        }
-
-        .analysis-item.breadcrumb {
-            border-left-color: #ffc107;
-        }
-
-        .analysis-item.content {
-            border-left-color: #17a2b8;
-        }
-
-        .analysis-item.graph {
-            border-left-color: #6f42c1;
-        }
-
-        .featured-snippet-potential {
-            margin: 8px 0;
-            padding: 6px;
-            border-radius: 4px;
-            font-size: 0.85em;
-            font-weight: 500;
-        }
-
-        .potential-high {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .potential-medium {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
-        }
-
-        .potential-low {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .header-hierarchy {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 5px;
-            margin: 8px 0;
-            font-size: 0.8em;
-        }
-
-        .header-item {
-            background: #e9ecef;
-            padding: 4px 6px;
-            border-radius: 3px;
-            text-align: center;
-        }
-
-        .header-count {
-            font-weight: bold;
-            color: #495057;
-        }
-
-        .content-stats {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
-            margin: 8px 0;
-            font-size: 0.8em;
-        }
-
-        .content-stat {
-            background: #f8f9fa;
-            padding: 6px;
-            border-radius: 4px;
-            text-align: center;
-        }
-
-        .content-stat-value {
-            font-weight: bold;
-            color: #6c757d;
-        }
-
-        .schema-relationships {
-            margin: 8px 0;
-            padding: 8px;
-            background: #f0f8ff;
-            border-radius: 4px;
-            font-size: 0.8em;
-        }
-
-        .relationship {
-            margin: 2px 0;
-            color: #0066cc;
-        }
-
-        .graph-complexity {
-            display: inline-block;
-            background: #e9ecef;
-            color: #495057;
-            padding: 2px 6px;
-            border-radius: 10px;
-            font-size: 0.75em;
-            margin: 4px 0;
-        }
-
-        .breadcrumb-details {
-            margin: 8px 0;
-            padding: 8px;
-            background: #fff8e1;
-            border-radius: 4px;
-            font-size: 0.85em;
-        }
-
-        .breadcrumb-path {
-            font-family: monospace;
-            color: #d63384;
-            margin: 4px 0;
-        }
-
-        .analysis-score {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .analysis-score-number {
-            font-size: 1.5em;
-            font-weight: bold;
-        }
-
-        .analysis-score.excellent {
-            color: #4CAF50;
-        }
-
-        .analysis-score.good {
-            color: #8BC34A;
-        }
-
-        .analysis-score.fair {
-            color: #FFC107;
-        }
-
-        .analysis-score.poor {
-            color: #F44336;
-        }
-
-        .analysis-details {
-            font-size: 0.9em;
-            color: #666;
-            margin: 5px 0;
-        }
-
-        .analysis-details strong {
-            color: #333;
-        }
-
-        .analysis-issues {
-            margin-top: 10px;
-        }
-
-        .analysis-issue {
-            color: #dc3545;
-            font-size: 0.85em;
-            margin: 3px 0;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .analysis-issue::before {
-            content: "⚠️";
-        }
-
-        .analysis-recommendation {
-            color: #28a745;
-            font-size: 0.85em;
-            margin: 3px 0;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .analysis-recommendation::before {
-            content: "💡";
-        }
-
-        .analysis-recommendation a {
-            color: #007bff;
-            text-decoration: none;
-        }
-
-        .analysis-recommendation a:hover {
-            text-decoration: underline;
-        }
-
-        .ai-crawlers {
-            margin: 10px 0;
-        }
-
-        .ai-crawler {
-            display: inline-block;
-            background: #007bff;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.8em;
-            margin: 2px;
-        }
-
-        .sitemap-info {
-            background: #e8f5e8;
-            border-radius: 5px;
-            padding: 8px;
-            margin: 5px 0;
-            font-size: 0.85em;
-        }
-
-        .schema-item {
-            background: white;
-            border-radius: 15px;
-            margin-bottom: 15px;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-
-        .schema-header {
-            padding: 20px;
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #eee;
-        }
-
-        .schema-header:hover {
-            background: #f8f9fa;
-        }
-
-        .schema-info {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .schema-type {
-            font-weight: 600;
-            font-size: 1.1em;
-        }
-
-        .schema-format {
-            background: #e9ecef;
-            padding: 4px 10px;
-            border-radius: 15px;
-            font-size: 0.8em;
-            color: #495057;
-        }
-
-        .expand-icon {
-            transition: transform 0.3s;
-        }
-
-        .expanded .expand-icon {
-            transform: rotate(180deg);
-        }
-
-        .schema-details {
-            display: none;
-            padding: 20px;
-            border-top: 1px solid #eee;
-            background: #f8f9fa;
-        }
-
-        .json-content {
-            background: #2d3748;
-            color: #e2e8f0;
-            padding: 20px;
-            border-radius: 8px;
-            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-            font-size: 0.85em;
-            overflow-x: auto;
-            white-space: pre;
-            line-height: 1.4;
-            position: relative;
-        }
-
-        .json-content:hover .copy-button {
-            opacity: 1;
-        }
-
-        .copy-button {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: #4a5568;
-            color: #e2e8f0;
-            border: none;
-            border-radius: 4px;
-            padding: 4px 8px;
-            font-size: 0.7em;
-            cursor: pointer;
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-
-        .copy-button:hover {
-            background: #5a6578;
-        }
-
-        .copy-button:active {
-            background: #6a7588;
-        }
-
-        .copy-button.copied {
-            background: #48bb78;
-        }
-
-        /* JSON syntax highlighting */
-        .json-key {
-            color: #90cdf4;
-        }
-
-        .json-string {
-            color: #9ae6b4;
-        }
-
-        .json-number {
-            color: #fbb6ce;
-        }
-
-        .json-boolean {
-            color: #fbb6ce;
-        }
-
-        .json-null {
-            color: #a0aec0;
-        }
-
-        .error {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            border-left: 5px solid #dc3545;
-        }
-
-        .error-message {
-            color: #dc3545;
-            font-weight: 500;
-        }
-
-        .no-results {
-            background: white;
-            border-radius: 15px;
-            padding: 40px;
-            text-align: center;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            color: #666;
-        }
-
-        .target-schemas {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-        }
-
-        .target-schemas h3 {
-            margin-bottom: 10px;
-            color: #333;
-        }
-
-        .schema-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .schema-tag {
-            background: #f8f9fa;
-            padding: 4px 12px;
-            border-radius: 15px;
-            font-size: 0.85em;
-            color: #495057;
-            border: 1px solid #dee2e6;
-        }
-
-        @media (max-width: 768px) {
-            .input-group {
-                flex-direction: column;
-            }
-
-            .url-input {
-                width: 100%;
-            }
-
-            .summary-stats {
-                justify-content: center;
-            }
-        }
-    </style>
+  <meta charset="utf-8" />
+  <title>AI + SEO + Schema Analyzer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Inline CSS for a clean, carded UI -->
+  <style>
+    :root{
+      --bg:#0f1222; --bg2:#14182c; --card:#1b2140; --muted:#a9b3c9; --text:#e6ebff;
+      --brand1:#7c5cff; --brand2:#00d4ff; --good:#20c997; --fair:#ffb020; --poor:#ff5d5d;
+      --accent:#4cc9f0;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial;
+      color:var(--text); background:radial-gradient(1000px 600px at 10% -10%, #223 0%, transparent 60%), linear-gradient(160deg, var(--bg) 0%, #0b1021 100%);
+      min-height:100vh; padding:24px;
+    }
+    .container{max-width:1200px; margin:0 auto}
+    .title{
+      display:flex; align-items:center; gap:12px; margin-bottom:18px;
+    }
+    .title h1{margin:0; font-size:26px; letter-spacing:.2px}
+    .title small{color:var(--muted)}
+    .input-card{
+      background:linear-gradient(180deg,var(--bg2), #11183a); border:1px solid #20274a;
+      border-radius:16px; padding:16px; margin-bottom:16px;
+      box-shadow:0 8px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    .row{display:flex; gap:12px; flex-wrap:wrap}
+    input[type=url]{flex:1; min-width:260px; padding:14px 13px; border-radius:10px; border:1px solid #2a335f; background:#0c1130; color:var(--text)}
+    input[type=url]::placeholder{color:#6e7696}
+    button{
+      background:linear-gradient(135deg,var(--brand1),var(--brand2));
+      color:#10142b; border:none; border-radius:10px; padding:12px 18px; font-weight:700; cursor:pointer;
+      box-shadow:0 8px 24px rgba(0,212,255,.25); transition:transform .12s ease;
+    }
+    button:hover{transform:translateY(-1px)}
+    button:disabled{opacity:.6; cursor:not-allowed; transform:none}
+
+    .grid{display:grid; gap:12px}
+    @media(min-width:900px){ .grid.cols-3{grid-template-columns:repeat(3,1fr)} .grid.cols-2{grid-template-columns:repeat(2,1fr)} }
+
+    .card{
+      background:linear-gradient(180deg, #12183a, #0f1534);
+      border:1px solid #232a58; border-radius:14px; padding:14px;
+      box-shadow:0 6px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    .card h3{margin:0 0 10px 0; font-size:16px; letter-spacing:.2px}
+    .muted{color:var(--muted); font-size:13px}
+    .kv{display:flex; flex-wrap:wrap; gap:10px 16px; font-size:13px; color:var(--muted)}
+    .kv b{color:var(--text); font-weight:600}
+
+    .score{
+      display:inline-flex; align-items:center; gap:6px; font-weight:800; letter-spacing:.3px;
+      border-radius:999px; padding:5px 10px; font-size:12px;
+      background:#0e1436; border:1px solid #2a3170;
+    }
+    .score.good{color:#0fe4a5; border-color:#15644f; background:rgba(20,120,86,.15)}
+    .score.fair{color:#ffd36b; border-color:#6f5210; background:rgba(140,100,16,.16)}
+    .score.poor{color:#ff8b8b; border-color:#7a1f2b; background:rgba(140,26,40,.16)}
+    .score.excellent{color:#76fcd6; border-color:#1a6a58; background:rgba(26,106,88,.18)}
+
+    .badges{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px}
+    .badge{font-size:11px; padding:5px 9px; border:1px solid #2e376f; border-radius:999px; color:#c8d1ff; background:#0d1434}
+    .elig{display:flex; flex-wrap:wrap; gap:6px}
+    .elig .ok{background:rgba(29,165,122,.16); border:1px solid #1b6b54; color:#90ffd8}
+    .elig .no{background:rgba(150,55,55,.16); border:1px solid #763743; color:#ffb5b5}
+
+    .list{display:grid; gap:6px; font-size:13px}
+    .issue::before{content:"⚠️ "; opacity:.9}
+    .rec::before{content:"💡 "; opacity:.9}
+    .issue{color:#ffb5b5}
+    .rec{color:#c2ffd7}
+    .docs a{color:#9dd7ff; text-decoration:none}
+    .docs a:hover{text-decoration:underline}
+
+    .section-title{display:flex; align-items:center; gap:8px; margin:16px 0 8px; font-size:18px}
+    .sub{color:#a7b0d7; font-size:13px; margin:6px 0 12px}
+
+    /* schema listing */
+    .schema-item{background:#0f1536; border:1px solid #26306b; border-radius:12px; overflow:hidden}
+    .schema-head{display:flex; justify-content:space-between; align-items:center; padding:12px 14px; cursor:pointer}
+    .schema-info{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+    .pill{font-size:11px; padding:4px 8px; border:1px solid #3a458a; border-radius:999px; color:#c8d1ff; background:#0d1434}
+    .pill.match{border-color:#1f7b64; background:rgba(23,139,109,.16); color:#91ffd9; font-weight:700}
+    .schema-body{display:none; padding:0 14px 14px 14px; border-top:1px solid #26306b; background:#0c1231}
+    .pre-wrap{position:relative; background:#0b112b; border:1px solid #283064; border-radius:10px; padding:12px; overflow-x:auto; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:12px; color:#e9f0ff}
+    .copy{position:absolute; top:8px; right:8px; font-size:11px; padding:6px 8px; border-radius:8px; border:1px solid #2d386f; background:#10193d; color:#b8c3ff; cursor:pointer}
+    .copy:active{transform:translateY(1px)}
+    .json .k{color:#9cc9ff} .json .s{color:#b0ffcf} .json .n{color:#ffb1d2} .json .b{color:#ffd19c} .json .l{color:#8893c9}
+    .hr{height:1px; background:#253067; margin:12px 0}
+    .hidden{display:none}
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Schema.org Validator</h1>
-            <p>Analyze websites for structured data markup</p>
-        </div>
-
-        <div class="target-schemas">
-            <h3>Target Schemas</h3>
-            <div class="schema-tags">
-                <span class="schema-tag">Hotel</span>
-                <span class="schema-tag">LodgingBusiness</span>
-                <span class="schema-tag">FAQPage</span>
-                <span class="schema-tag">Organization</span>
-                <span class="schema-tag">Review</span>
-                <span class="schema-tag">AggregateRating</span>
-            </div>
-        </div>
-
-        <div class="input-section">
-            <div class="input-group">
-                <input type="url" class="url-input" placeholder="Enter website URL (e.g., https://example.com)" id="urlInput">
-                <button class="analyze-btn" id="analyzeBtn">Analyze</button>
-            </div>
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p>Analyzing website...</p>
-            </div>
-        </div>
-
-        <div class="results" id="results">
-            <div class="summary" id="summary">
-                <div class="summary-stats">
-                    <div class="stat">
-                        <div class="stat-number" id="totalFound">0</div>
-                        <div class="stat-label">Total Schemas Found</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-number" id="totalMatched">0</div>
-                        <div class="stat-label">Target Schemas Matched</div>
-                    </div>
-                </div>
-                <div id="matchedBadges"></div>
-            </div>
-
-            <div class="validation-summary" id="validationSummary">
-                <h3>Schema Validation Results <span class="schema-docs-link">📖 <a href="https://schema.org/docs/how-we-work.html" target="_blank" rel="noopener" title="Learn about Schema.org validation">docs</a></span></h3>
-                <p>Validation checks your structured data against Schema.org specifications for SEO best practices.</p>
-                <div class="validation-stats">
-                    <div class="validation-stat">
-                        <span class="validation-stat-number" id="averageScore">0</span>
-                        <span class="validation-stat-label">Average Score</span>
-                    </div>
-                    <div class="validation-stat">
-                        <span class="validation-stat-number" id="totalValidationScore">0</span>
-                        <span class="validation-stat-label">Total Points</span>
-                    </div>
-                    <div class="validation-stat">
-                        <span class="validation-stat-number" id="schemaCount">0</span>
-                        <span class="validation-stat-label">Schemas Validated</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="ai-seo-analysis" id="aiSeoAnalysis">
-                <h3>🤖 AI SEO Analysis</h3>
-                <div class="analysis-grid">
-                    <div class="analysis-item robots">
-                        <div class="analysis-score">
-                            <span class="analysis-score-number" id="robotsScore">0</span>
-                            <span class="analysis-score" id="robotsScoreClass">/100</span>
-                        </div>
-                        <h4>robots.txt</h4>
-                        <div class="analysis-details">
-                            <div id="robotsDetails"></div>
-                        </div>
-                        <div class="analysis-issues" id="robotsIssues"></div>
-                        <div class="analysis-recommendations" id="robotsRecommendations"></div>
-                    </div>
-
-                    <div class="analysis-item llm">
-                        <div class="analysis-score">
-                            <span class="analysis-score-number" id="llmScore">0</span>
-                            <span class="analysis-score" id="llmScoreClass">/100</span>
-                        </div>
-                        <h4>llms.txt</h4>
-                        <div class="analysis-details">
-                            <div id="llmDetails"></div>
-                        </div>
-                        <div class="analysis-issues" id="llmIssues"></div>
-                        <div class="analysis-recommendations" id="llmRecommendations"></div>
-                    </div>
-
-                    <div class="analysis-item opengraph">
-                        <div class="analysis-score">
-                            <span class="analysis-score-number" id="openGraphScore">0</span>
-                            <span class="analysis-score" id="openGraphScoreClass">/100</span>
-                        </div>
-                        <h4>OpenGraph</h4>
-                        <div class="analysis-details">
-                            <div id="openGraphDetails"></div>
-                            <div class="social-coverage" id="openGraphSocial"></div>
-                            <div class="hotel-properties" id="openGraphHotel" style="display: none;"></div>
-                        </div>
-                        <div class="analysis-issues" id="openGraphIssues"></div>
-                        <div class="analysis-recommendations" id="openGraphRecommendations"></div>
-                    </div>
-
-                    <div class="analysis-item ai">
-                        <div class="analysis-score">
-                            <span class="analysis-score-number" id="aiScore">0</span>
-                            <span class="analysis-score" id="aiScoreClass">/100</span>
-                        </div>
-                        <h4>ai.txt</h4>
-                        <div class="analysis-details">
-                            <div id="aiDetails"></div>
-                        </div>
-                        <div class="analysis-issues" id="aiIssues"></div>
-                        <div class="analysis-recommendations" id="aiRecommendations"></div>
-                    </div>
-
-                    <div class="analysis-item sitemap">
-                        <div class="analysis-score">
-                            <span class="analysis-score-number" id="sitemapScore">0</span>
-                            <span class="analysis-score" id="sitemapScoreClass">/100</span>
-                        </div>
-                        <h4>sitemap.xml</h4>
-                        <div class="analysis-details">
-                            <div id="sitemapDetails"></div>
-                            <div class="sitemap-stats" id="sitemapStats" style="display: none;"></div>
-                        </div>
-                        <div class="analysis-issues" id="sitemapIssues"></div>
-                        <div class="analysis-recommendations" id="sitemapRecommendations"></div>
-                    </div>
-                </div>
-
-                <div class="aeo-geo-analysis" id="aeoGeoAnalysis">
-                    <h3>🎯 AEO/GEO Analysis</h3>
-                    <div class="analysis-grid">
-                        <div class="analysis-item faq-howto">
-                            <div class="analysis-score">
-                                <span class="analysis-score-number" id="faqHowToScore">0</span>
-                                <span class="analysis-score" id="faqHowToScoreClass">/100</span>
-                            </div>
-                            <h4>FAQ/HowTo</h4>
-                            <div class="analysis-details">
-                                <div id="faqHowToDetails"></div>
-                                <div class="featured-snippet-potential potential-low" id="faqHowToPotential">Featured Snippet Potential: Low</div>
-                            </div>
-                            <div class="analysis-issues" id="faqHowToIssues"></div>
-                            <div class="analysis-recommendations" id="faqHowToRecommendations"></div>
-                        </div>
-
-                        <div class="analysis-item breadcrumb">
-                            <div class="analysis-score">
-                                <span class="analysis-score-number" id="breadcrumbScore">0</span>
-                                <span class="analysis-score" id="breadcrumbScoreClass">/100</span>
-                            </div>
-                            <h4>Breadcrumbs</h4>
-                            <div class="analysis-details">
-                                <div id="breadcrumbDetails"></div>
-                                <div class="breadcrumb-details" id="breadcrumbPath" style="display: none;"></div>
-                            </div>
-                            <div class="analysis-issues" id="breadcrumbIssues"></div>
-                            <div class="analysis-recommendations" id="breadcrumbRecommendations"></div>
-                        </div>
-
-                        <div class="analysis-item content">
-                            <div class="analysis-score">
-                                <span class="analysis-score-number" id="contentScore">0</span>
-                                <span class="analysis-score" id="contentScoreClass">/100</span>
-                            </div>
-                            <h4>Content Structure</h4>
-                            <div class="analysis-details">
-                                <div id="contentDetails"></div>
-                                <div class="header-hierarchy" id="contentHeaders" style="display: none;"></div>
-                                <div class="content-stats" id="contentStats" style="display: none;"></div>
-                            </div>
-                            <div class="analysis-issues" id="contentIssues"></div>
-                            <div class="analysis-recommendations" id="contentRecommendations"></div>
-                        </div>
-
-                        <div class="analysis-item graph">
-                            <div class="analysis-score">
-                                <span class="analysis-score-number" id="graphScore">0</span>
-                                <span class="analysis-score" id="graphScoreClass">/100</span>
-                            </div>
-                            <h4>JSON-LD @graph</h4>
-                            <div class="analysis-details">
-                                <div id="graphDetails"></div>
-                                <div class="schema-relationships" id="graphRelationships" style="display: none;"></div>
-                            </div>
-                            <div class="analysis-issues" id="graphIssues"></div>
-                            <div class="analysis-recommendations" id="graphRecommendations"></div>
-                        </div>
-                    </div>
-                <div class="performance-technical-analysis" id="performanceTechnicalAnalysis">
-                    <h3>⚡ Performance & Technical SEO</h3>
-                    <div class="analysis-grid">
-                        <div class="analysis-item core-web-vitals">
-                            <div class="analysis-score">
-                                <span class="analysis-score-number" id="performanceScore">0</span>
-                                <span class="analysis-score" id="performanceScoreClass">/100</span>
-                            </div>
-                            <h4>Core Web Vitals</h4>
-                            <div class="analysis-details">
-                                <div id="performanceDetails"></div>
-                                <div class="core-web-vitals" id="coreWebVitals" style="display: none;"></div>
-                            </div>
-                            <div class="analysis-issues" id="performanceIssues"></div>
-                            <div class="analysis-recommendations" id="performanceRecommendations"></div>
-                        </div>
-
-                        <div class="analysis-item technical-seo">
-                            <div class="analysis-score">
-                                <span class="analysis-score-number" id="technicalScore">0</span>
-                                <span class="analysis-score" id="technicalScoreClass">/100</span>
-                            </div>
-                            <h4>Technical SEO</h4>
-                            <div class="analysis-details">
-                                <div id="technicalDetails"></div>
-                                <div class="technical-stats" id="technicalStats" style="display: none;"></div>
-                            </div>
-                            <div class="analysis-issues" id="technicalIssues"></div>
-                            <div class="analysis-recommendations" id="technicalRecommendations"></div>
-                        </div>
-
-                        <div class="analysis-item mobile">
-                            <div class="analysis-score">
-                                <span class="analysis-score-number" id="mobileScore">0</span>
-                                <span class="analysis-score" id="mobileScoreClass">/100</span>
-                            </div>
-                            <h4>Mobile Optimization</h4>
-                            <div class="analysis-details">
-                                <div id="mobileDetails"></div>
-                                <div class="mobile-stats" id="mobileStats" style="display: none;"></div>
-                            </div>
-                            <div class="analysis-issues" id="mobileIssues"></div>
-                            <div class="analysis-recommendations" id="mobileRecommendations"></div>
-                        </div>
-
-                        <div class="analysis-item page-speed">
-                            <div class="analysis-score">
-                                <span class="analysis-score-number" id="speedScore">0</span>
-                                <span class="analysis-score" id="speedScoreClass">/100</span>
-                            </div>
-                            <h4>Page Speed</h4>
-                            <div class="analysis-details">
-                                <div id="speedDetails"></div>
-                                <div class="speed-stats" id="speedStats" style="display: none;"></div>
-                            </div>
-                            <div class="analysis-issues" id="speedIssues"></div>
-                            <div class="analysis-recommendations" id="speedRecommendations"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="schemaResults"></div>
-        </div>
-
-        <div class="error" id="error">
-            <div class="error-message" id="errorMessage"></div>
-        </div>
-
-        <div class="no-results" id="noResults">
-            <h3>Ready to analyze</h3>
-            <p>Enter a website URL above and click "Analyze" to check for Schema.org structured data.</p>
-        </div>
+  <div class="container">
+    <div class="title">
+      <h1>AI • SEO • Schema Analyzer</h1>
+      <small class="muted">AEO / GEO / Schema.org / OpenGraph / robots / llms / ai</small>
     </div>
 
-    <script>
-        const urlInput = document.getElementById('urlInput');
-        const analyzeBtn = document.getElementById('analyzeBtn');
-        const loading = document.getElementById('loading');
-        const results = document.getElementById('results');
-        const summary = document.getElementById('summary');
-        const error = document.getElementById('error');
-        const errorMessage = document.getElementById('errorMessage');
-        const noResults = document.getElementById('noResults');
-        const schemaResults = document.getElementById('schemaResults');
+    <div class="input-card">
+      <div class="row">
+        <input id="urlInput" type="url" placeholder="Enter a URL e.g. https://example.com/page" />
+        <button id="analyzeBtn">Analyze</button>
+      </div>
+      <div id="loading" class="muted" style="margin-top:10px; display:none;">Analyzing…</div>
+      <div id="error" class="muted" style="margin-top:10px; color:#ff9595;"></div>
+    </div>
 
-        // Handle analyze button click
-        analyzeBtn.addEventListener('click', analyzeUrl);
+    <!-- Summary -->
+    <div class="grid cols-3">
+      <div class="card">
+        <h3>Summary</h3>
+        <div class="kv">
+          <div><b>Total Schemas</b> <span id="totalSchemas">0</span></div>
+          <div><b>Validated Targets</b> <span id="matchedCount">0</span></div>
+          <div><b>Avg Validation</b> <span id="avgValidation">0</span></div>
+        </div>
+        <div class="badges" id="matchedBadges"></div>
+      </div>
 
-        // Handle enter key in input
-        urlInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                analyzeUrl();
-            }
+      <div class="card">
+        <h3>Validation</h3>
+        <div class="kv">
+          <div><b>Total Points</b> <span id="totalPoints">0</span></div>
+          <div><b>Max Points</b> <span id="maxPoints">0</span></div>
+          <div><b>Schemas Validated</b> <span id="schemasValidated">0</span></div>
+        </div>
+        <div style="margin-top:8px;">
+          <span id="validationScorePill" class="score">0</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Rich Results Eligibility</h3>
+        <div id="eligibility" class="elig"></div>
+      </div>
+    </div>
+
+    <!-- Area cards -->
+    <div class="grid cols-3" style="margin-top:12px">
+
+      <div class="card">
+        <h3>robots.txt</h3>
+        <div class="kv"><b>Score</b> <span id="robotsScore" class="score">0</span></div>
+        <div id="robotsDetails" class="sub"></div>
+        <div class="list" id="robotsIssues"></div>
+        <div class="list" id="robotsRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>llms.txt</h3>
+        <div class="kv"><b>Score</b> <span id="llmScore" class="score">0</span></div>
+        <div id="llmDetails" class="sub"></div>
+        <div class="list" id="llmIssues"></div>
+        <div class="list" id="llmRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>ai.txt</h3>
+        <div class="kv"><b>Score</b> <span id="aiScore" class="score">0</span></div>
+        <div id="aiDetails" class="sub"></div>
+        <div class="list" id="aiIssues"></div>
+        <div class="list" id="aiRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>OpenGraph / Twitter</h3>
+        <div class="kv"><b>Score</b> <span id="ogScore" class="score">0</span></div>
+        <div id="ogDetails" class="sub"></div>
+        <div class="list" id="ogIssues"></div>
+        <div class="list" id="ogRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>Sitemap</h3>
+        <div class="kv"><b>Score</b> <span id="smScore" class="score">0</span></div>
+        <div id="smDetails" class="sub"></div>
+        <div class="list" id="smIssues"></div>
+        <div class="list" id="smRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>Crawlability</h3>
+        <div class="kv"><b>Score</b> <span id="crawlScore" class="score">0</span></div>
+        <div id="crawlDetails" class="sub"></div>
+        <div class="list" id="crawlIssues"></div>
+        <div class="list" id="crawlRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>Meta Consistency</h3>
+        <div class="kv"><b>Score</b> <span id="metaScore" class="score">0</span></div>
+        <div id="metaDetails" class="sub"></div>
+        <div class="list" id="metaIssues"></div>
+        <div class="list" id="metaRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>Canonical / OG Alignment</h3>
+        <div class="kv"><b>Score</b> <span id="canScore" class="score">0</span></div>
+        <div id="canDetails" class="sub"></div>
+        <div class="list" id="canIssues"></div>
+        <div class="list" id="canRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>Content Structure</h3>
+        <div class="kv"><b>Score</b> <span id="contentScore" class="score">0</span></div>
+        <div id="contentDetails" class="sub"></div>
+        <div class="list" id="contentIssues"></div>
+        <div class="list" id="contentRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>Breadcrumbs</h3>
+        <div class="kv"><b>Score</b> <span id="bcScore" class="score">0</span></div>
+        <div id="bcDetails" class="sub"></div>
+        <div class="list" id="bcIssues"></div>
+        <div class="list" id="bcRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>FAQ / HowTo (AEO)</h3>
+        <div class="kv"><b>Score</b> <span id="faqScore" class="score">0</span></div>
+        <div id="faqDetails" class="sub"></div>
+        <div class="list" id="faqIssues"></div>
+        <div class="list" id="faqRecs"></div>
+      </div>
+
+      <div class="card">
+        <h3>Performance</h3>
+        <div class="kv"><b>Score</b> <span id="perfScore" class="score">0</span></div>
+        <div id="perfDetails" class="sub"></div>
+        <div class="list" id="perfIssues"></div>
+        <div class="list" id="perfRecs"></div>
+      </div>
+    </div>
+
+    <!-- Schemas -->
+    <div class="section-title" style="margin-top:16px">Schemas Found</div>
+    <div id="schemasWrap" class="grid cols-2"></div>
+
+  </div>
+
+  <script>
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+    const urlInput = $('#urlInput');
+    const analyzeBtn = $('#analyzeBtn');
+    const loading = $('#loading');
+    const errorBox = $('#error');
+
+    function scoreClass(v){
+      if (v >= 85) return 'excellent';
+      if (v >= 70) return 'good';
+      if (v >= 45) return 'fair';
+      return 'poor';
+    }
+    function htmlEscape(s){
+      return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;')
+    }
+    function cleanClone(obj){
+      // Remove undefined / functions; keep JSON-serializable
+      return JSON.parse(JSON.stringify(obj));
+    }
+    function jsonSyntaxHighlight(json){
+      let s = htmlEscape(JSON.stringify(cleanClone(json), null, 2));
+      // Keys
+      s = s.replace(/(^|\n)\s*"(.*?)"\s*:/g, (m, a, b)=> `${a}<span class="k">"${b}"</span>:` );
+      // Strings
+      s = s.replace(/: "(.*?)"/g, (m, v)=> `: <span class="s">"${v}"</span>`);
+      // Numbers
+      s = s.replace(/: ([\-]?\d+(?:\.\d+)?)(,?)/g, (m, num, comma)=> `: <span class="n">${num}</span>${comma}`);
+      // true/false/null
+      s = s.replace(/: (true|false|null)/g, (m, b)=> `: <span class="b">${b}</span>`);
+      return s;
+    }
+    function setScore(el, v){
+      el.textContent = v;
+      el.className = 'score ' + scoreClass(v);
+    }
+    function listInto(el, arr, cls){
+      el.innerHTML = (arr||[]).map(t => `<div class="${cls}">${htmlEscape(t.message || t)}</div>`).join('');
+    }
+    function kv(...pairs){
+      return pairs.filter(Boolean).map(([k,v])=>`<div><b>${htmlEscape(k)}</b> ${htmlEscape(v)}</div>`).join('');
+    }
+    function pill(text, href){
+      if (href) return `<a class="pill docs" href="${href}" target="_blank" rel="noopener">${htmlEscape(text)} ⧉</a>`;
+      return `<span class="pill">${htmlEscape(text)}</span>`;
+    }
+
+    analyzeBtn.addEventListener('click', analyze);
+    urlInput.addEventListener('keypress', e => { if (e.key === 'Enter') analyze(); });
+
+    async function analyze(){
+      const url = urlInput.value.trim();
+      if (!url){ errorBox.textContent = 'Please enter a URL.'; return; }
+      errorBox.textContent = '';
+      loading.style.display = 'block';
+      analyzeBtn.disabled = true;
+
+      try{
+        const r = await fetch('/api/analyze',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Analysis failed');
+        renderAll(data);
+      }catch(err){
+        errorBox.textContent = err.message || 'Something went wrong.';
+      }finally{
+        loading.style.display = 'none';
+        analyzeBtn.disabled = false;
+      }
+    }
+
+    function renderAll(data){
+      // Summary
+      const totalSchemas = (data.jsonLd?.length||0) + (data.microdata?.length||0) + (data.rdfa?.length||0);
+      $('#totalSchemas').textContent = totalSchemas;
+      $('#matchedCount').textContent = data.validation?.schemaCount || 0;
+      $('#avgValidation').textContent = data.validation?.averageScore || 0;
+      $('#totalPoints').textContent = data.validation?.totalScore || 0;
+      $('#maxPoints').textContent = data.validation?.totalMaxScore || 0;
+      $('#schemasValidated').textContent = data.validation?.schemaCount || 0;
+      setScore($('#validationScorePill'), data.validation?.averageScore || 0);
+
+      // Matched badges
+      const badges = (data.matched||[]).map(m => pill(`${m.type} • ${m.source}`, (m.validation?.schemaDocs||'')));
+      $('#matchedBadges').innerHTML = badges.join('');
+
+      // Eligibility
+      const eligWrap = $('#eligibility');
+      eligWrap.innerHTML = (data.richEligibility||[]).map(e => {
+        const cls = e.eligible ? 'ok' : 'no';
+        const title = e.eligible ? 'Eligible' : 'Needs work';
+        const reasons = (e.reasons||[]).length ? ` — ${htmlEscape(e.reasons.join(', '))}` : '';
+        return `<span class="badge ${cls}">${htmlEscape(e.feature)} • ${title}${reasons}</span>`;
+      }).join('');
+
+      // Area cards
+      fillArea('robots', data.robotsAnalysis, (a)=> kv(['Exists', a.exists?'Yes':'No'], ['AI bots', (a.aiCrawlers||[]).join(', ')||'None'], ['Sitemap', a.sitemapFound ? a.sitemapUrl : 'Not declared']));
+      fillArea('llm', data.llmAnalysis, (a)=> kv(['Exists', a.exists?'Yes':'No'], ['Quality', a.contentQuality||'none'], ['Sections', (a.sections||[]).length]));
+      fillArea('ai', data.aiAnalysis, (a)=> kv(['Exists', a.exists?'Yes':'No'], ['AI bots', (a.aiCrawlers||[]).join(', ')||'None'], ['Attribution', a.attributionRequired?'Required':'—']));
+      fillArea('og', data.openGraphAnalysis, (a)=> kv(['Exists', a.exists?'Yes':'No'], ['Social', (a.socialCoverage||[]).join(', ')||'None'], ['OG tags', Object.keys(a.tags||{}).length]));
+      fillArea('sm', data.sitemapAnalysis, (a)=> kv(['Exists', a.exists?'Yes':'No'], ['XML', a.xmlValid?'Valid':'—'], ['URLs', a.urlCount||0], ['Images', a.hasImages?'Yes':'—']));
+      fillArea('crawl', data.crawlability, (a)=> kv(['robots meta', a.details?.robotsMeta||'—'], ['internal links', a.details?.internalLinks||0], ['nofollow links', a.details?.nofollowLinks||0]));
+      fillArea('meta', data.metaConsistency, (a)=> kv(['Title', a.details?.title||'—'], ['Schema name', a.details?.schemaName||'—']));
+      fillArea('can', data.canonicalOgAlignment, (a)=> kv(['Canonical', a.details?.canonical||'—'], ['og:url', a.details?.ogUrl||'—']));
+      fillArea('content', data.contentStructureAnalysis, (a)=> kv(['H1..H6', JSON.stringify(a.headerHierarchy||{})], ['Paragraphs', a.paragraphStats?.count||0], ['Readability', a.readabilityScore||0]));
+      fillArea('bc', data.breadcrumbAnalysis, (a)=> kv(['Exists', a.exists?'Yes':'No'], ['Type', a.breadcrumbType||'—'], ['Depth', a.depth||0]));
+      fillArea('faq', data.faqHowToAnalysis, (a)=> kv(['FAQ count', a.totalQuestions||0], ['HowTo steps', a.totalSteps||0], ['Snippet Potential', a.featuredSnippetPotential||'low']));
+      fillArea('perf', data.performanceAnalysis, (a)=> kv(['Size', a.pageSpeed?.size||'—'], ['Requests', a.pageSpeed?.requests||0], ['Mobile', a.mobileFriendly?'Yes':'—'], ['LCP', a.coreWebVitals?.LCP?.value||'—']));
+
+      // Schemas (clean preview + validation mapping)
+      renderSchemas(data);
+    }
+
+    function fillArea(prefix, obj, detailsBuilder){
+      const scoreEl = document.getElementById(prefix + 'Score');
+      const detEl = document.getElementById(prefix + 'Details');
+      const issuesEl = document.getElementById(prefix + 'Issues');
+      const recsEl = document.getElementById(prefix + 'Recs');
+
+      if (!obj){
+        setScore(scoreEl, 0);
+        detEl.innerHTML = '<span class="muted">No data.</span>';
+        issuesEl.innerHTML = ''; recsEl.innerHTML = '';
+        return;
+      }
+      setScore(scoreEl, obj.score||0);
+      detEl.innerHTML = detailsBuilder(obj);
+      listInto(issuesEl, obj.issues||[], 'issue');
+      listInto(recsEl, obj.recommendations||[], 'rec');
+    }
+
+    function renderSchemas(data){
+      const wrap = $('#schemasWrap');
+      wrap.innerHTML = '';
+
+      // Build a hash map for validation lookup by JSON string
+      const vmap = new Map();
+      (data.matched||[]).forEach(m => {
+        const key = JSON.stringify(m.data);
+        vmap.set(key, { validation: m.validation, schemaDocs: m.validation?.schemaDocs, type: m.type, source: m.source });
+      });
+
+      const blocks = [
+        {label:'JSON-LD', list:data.jsonLd||[]},
+        {label:'Microdata', list:data.microdata||[]},
+        {label:'RDFa', list:data.rdfa||[]}
+      ];
+
+      blocks.forEach(block => {
+        block.list.forEach((schemaObj, idx) => {
+          const key = JSON.stringify(schemaObj);
+          const v = vmap.get(key);
+          const schemaType = Array.isArray(schemaObj['@type']) ? schemaObj['@type'].join(', ') : (schemaObj['@type'] || 'Thing');
+
+          const item = document.createElement('div');
+          item.className = 'schema-item';
+
+          item.innerHTML = `
+            <div class="schema-head">
+              <div class="schema-info">
+                ${pill(schemaType)}
+                ${pill(block.label)}
+                ${v ? `<span class="pill match">MATCH</span>` : ``}
+                ${v?.schemaDocs ? `<a href="${v.schemaDocs}" target="_blank" class="pill docs">Schema docs ⧉</a>` : ``}
+                ${v?.validation ? `<span class="score ${scoreClass(v.validation.score||0)}">${v.validation.score||0}/${v.validation.maxScore||100}</span>` : ``}
+              </div>
+              <div class="muted">Click to expand</div>
+            </div>
+            <div class="schema-body">
+              ${v?.validation ? renderValidation(v.validation) : ''}
+              <div class="hr"></div>
+              <div class="pre-wrap json">
+                <button class="copy">Copy</button>
+                <pre class="json">${jsonSyntaxHighlight(schemaObj)}</pre>
+              </div>
+            </div>
+          `;
+
+          // toggle
+          const head = item.querySelector('.schema-head');
+          const body = item.querySelector('.schema-body');
+          head.addEventListener('click', ()=>{ body.style.display = (body.style.display==='block'?'none':'block'); });
+
+          // copy
+          const copyBtn = item.querySelector('.copy');
+          copyBtn.addEventListener('click', (ev)=>{
+            ev.stopPropagation();
+            const raw = JSON.stringify(cleanClone(schemaObj), null, 2);
+            navigator.clipboard.writeText(raw).then(()=>{
+              copyBtn.textContent = 'Copied!';
+              setTimeout(()=> copyBtn.textContent='Copy', 900);
+            });
+          });
+
+          wrap.appendChild(item);
         });
-
-        async function analyzeUrl() {
-            const url = urlInput.value.trim();
-
-            if (!url) {
-                showError('Please enter a URL');
-                return;
-            }
-
-            // Show loading state
-            analyzeBtn.disabled = true;
-            loading.style.display = 'block';
-            results.style.display = 'none';
-            error.style.display = 'none';
-            noResults.style.display = 'none';
-
-            try {
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ url })
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Analysis failed');
-                }
-
-                displayResults(data);
-
-            } catch (error) {
-                console.error('Analysis error:', error);
-                showError(error.message || 'An error occurred during analysis');
-            } finally {
-                analyzeBtn.disabled = false;
-                loading.style.display = 'none';
-            }
-        }
-
-        function showError(message) {
-            errorMessage.textContent = message;
-            error.style.display = 'block';
-            results.style.display = 'none';
-            noResults.style.display = 'none';
-        }
-
-        function displayResults(data) {
-            // Update summary
-            document.getElementById('totalFound').textContent = data.totalFound || 0;
-            document.getElementById('totalMatched').textContent = data.totalMatched || 0;
-
-            // Update matched badges
-            const matchedBadges = document.getElementById('matchedBadges');
-            matchedBadges.innerHTML = '';
-
-            if (data.matched && data.matched.length > 0) {
-                data.matched.forEach(match => {
-                    const badge = document.createElement('span');
-                    badge.className = 'matched-badge';
-                    badge.textContent = `${match.schemaType} (${match.type})`;
-                    matchedBadges.appendChild(badge);
-                });
-            }
-
-            // Update validation summary
-            const validationSummary = document.getElementById('validationSummary');
-            if (data.validation && data.matched && data.matched.length > 0) {
-                document.getElementById('averageScore').textContent = data.validation.averageScore || 0;
-                document.getElementById('totalValidationScore').textContent = data.validation.totalScore || 0;
-                document.getElementById('schemaCount').textContent = data.validation.schemaCount || 0;
-
-                // Set validation summary class based on score
-                const avgScore = data.validation.averageScore || 0;
-                validationSummary.className = avgScore >= 80 ? 'validation-summary valid' : avgScore >= 60 ? 'validation-summary' : 'validation-summary invalid';
-                validationSummary.style.display = 'block';
-            } else {
-                validationSummary.style.display = 'none';
-            }
-
-            // Update AI SEO analysis
-            const aiSeoAnalysis = document.getElementById('aiSeoAnalysis');
-            if (data.robotsAnalysis || data.llmAnalysis || data.openGraphAnalysis || data.aiAnalysis || data.sitemapAnalysis) {
-                aiSeoAnalysis.style.display = 'block';
-
-                // Robots.txt analysis
-                if (data.robotsAnalysis) {
-                    const robotsScore = data.robotsAnalysis.score;
-                    const robotsScoreClass = robotsScore >= 80 ? 'excellent' : robotsScore >= 60 ? 'good' : robotsScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('robotsScore').textContent = robotsScore;
-                    document.getElementById('robotsScoreClass').textContent = `/${data.robotsAnalysis.maxScore}`;
-                    document.getElementById('robotsScoreClass').className = `analysis-score ${robotsScoreClass}`;
-
-                    const robotsDetails = document.getElementById('robotsDetails');
-                    robotsDetails.innerHTML = `
-                        <strong>Status:</strong> ${data.robotsAnalysis.exists ? '✅ Found' : '❌ Not found'}<br>
-                        ${data.robotsAnalysis.aiCrawlers.length > 0 ? `<strong>AI Crawlers:</strong> ${data.robotsAnalysis.aiCrawlers.map(crawler => `<span class="ai-crawler">${crawler}</span>`).join('')}<br>` : ''}
-                        ${data.robotsAnalysis.sitemapFound ? `<div class="sitemap-info">✅ Sitemap declared: ${data.robotsAnalysis.sitemapUrl}</div>` : ''}
-                    `;
-
-                    const robotsIssues = document.getElementById('robotsIssues');
-                    robotsIssues.innerHTML = data.robotsAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const robotsRecommendations = document.getElementById('robotsRecommendations');
-                    robotsRecommendations.innerHTML = data.robotsAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-                }
-
-                // LLM.txt analysis
-                if (data.llmAnalysis) {
-                    const llmScore = data.llmAnalysis.score;
-                    const llmScoreClass = llmScore >= 80 ? 'excellent' : llmScore >= 60 ? 'good' : llmScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('llmScore').textContent = llmScore;
-                    document.getElementById('llmScoreClass').textContent = `/${data.llmAnalysis.maxScore}`;
-                    document.getElementById('llmScoreClass').className = `analysis-score ${llmScoreClass}`;
-
-                    const llmDetails = document.getElementById('llmDetails');
-                    llmDetails.innerHTML = `
-                        <strong>Status:</strong> ${data.llmAnalysis.exists ? '✅ Found' : '❌ Not found'}<br>
-                        <strong>Content Quality:</strong> ${data.llmAnalysis.contentQuality}<br>
-                        <strong>Sections:</strong> ${data.llmAnalysis.sections.length} sections<br>
-                        ${data.llmAnalysis.businessInfo ? '✅ Business information included<br>' : ''}
-                        ${data.llmAnalysis.hasContact ? '✅ Contact information included<br>' : ''}
-                    `;
-
-                    const llmIssues = document.getElementById('llmIssues');
-                    llmIssues.innerHTML = data.llmAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const llmRecommendations = document.getElementById('llmRecommendations');
-                    llmRecommendations.innerHTML = data.llmAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-                }
-
-                // OpenGraph analysis
-                if (data.openGraphAnalysis) {
-                    const openGraphScore = data.openGraphAnalysis.score;
-                    const openGraphScoreClass = openGraphScore >= 80 ? 'excellent' : openGraphScore >= 60 ? 'good' : openGraphScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('openGraphScore').textContent = openGraphScore;
-                    document.getElementById('openGraphScoreClass').textContent = `/${data.openGraphAnalysis.maxScore}`;
-                    document.getElementById('openGraphScoreClass').className = `analysis-score ${openGraphScoreClass}`;
-
-                    const openGraphDetails = document.getElementById('openGraphDetails');
-                    openGraphDetails.innerHTML = `
-                        <strong>Status:</strong> ${data.openGraphAnalysis.exists ? '✅ Found' : '❌ Not found'}<br>
-                        <strong>Social Coverage:</strong> ${data.openGraphAnalysis.socialCoverage.join(', ') || 'None'}<br>
-                        <strong>Tags Found:</strong> ${Object.keys(data.openGraphAnalysis.tags).length} properties
-                    `;
-
-                    const openGraphSocial = document.getElementById('openGraphSocial');
-                    if (data.openGraphAnalysis.socialCoverage.length > 0) {
-                        openGraphSocial.innerHTML = data.openGraphAnalysis.socialCoverage.map(platform => `<span class="social-platform">${platform}</span>`).join('');
-                    }
-
-                    // Hotel-specific properties
-                    const openGraphHotel = document.getElementById('openGraphHotel');
-                    const hotelProps = Object.keys(data.openGraphAnalysis.hotelSpecific);
-                    if (hotelProps.length > 0) {
-                        openGraphHotel.style.display = 'block';
-                        openGraphHotel.innerHTML = hotelProps.map(prop => `
-                            <div class="hotel-property">
-                                <span class="property-name">${prop.replace('hotel:', '').replace('_', ' ').toUpperCase()}</span>
-                                <span class="property-value">${data.openGraphAnalysis.hotelSpecific[prop]}</span>
-                            </div>
-                        `).join('');
-                    }
-
-                    const openGraphIssues = document.getElementById('openGraphIssues');
-                    openGraphIssues.innerHTML = data.openGraphAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const openGraphRecommendations = document.getElementById('openGraphRecommendations');
-                    openGraphRecommendations.innerHTML = data.openGraphAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-                }
-
-                // AI.txt analysis
-                if (data.aiAnalysis) {
-                    const aiScore = data.aiAnalysis.score;
-                    const aiScoreClass = aiScore >= 80 ? 'excellent' : aiScore >= 60 ? 'good' : aiScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('aiScore').textContent = aiScore;
-                    document.getElementById('aiScoreClass').textContent = `/${data.aiAnalysis.maxScore}`;
-                    document.getElementById('aiScoreClass').className = `analysis-score ${aiScoreClass}`;
-
-                    const aiDetails = document.getElementById('aiDetails');
-                    aiDetails.innerHTML = `
-                        <strong>Status:</strong> ${data.aiAnalysis.exists ? '✅ Found' : '❌ Not found'}<br>
-                        <strong>AI Crawlers:</strong> ${data.aiAnalysis.aiCrawlers.length > 0 ? data.aiAnalysis.aiCrawlers.join(', ') : 'None'}<br>
-                        ${data.aiAnalysis.attributionRequired ? '✅ Attribution requirements specified<br>' : ''}
-                        ${data.aiAnalysis.usageGuidelines.length > 0 ? `✅ ${data.aiAnalysis.usageGuidelines.length} usage guidelines<br>` : ''}
-                    `;
-
-                    const aiIssues = document.getElementById('aiIssues');
-                    aiIssues.innerHTML = data.aiAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const aiRecommendations = document.getElementById('aiRecommendations');
-                    aiRecommendations.innerHTML = data.aiAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-                }
-
-                // Sitemap.xml analysis
-                if (data.sitemapAnalysis) {
-                    const sitemapScore = data.sitemapAnalysis.score;
-                    const sitemapScoreClass = sitemapScore >= 80 ? 'excellent' : sitemapScore >= 60 ? 'good' : sitemapScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('sitemapScore').textContent = sitemapScore;
-                    document.getElementById('sitemapScoreClass').textContent = `/${data.sitemapAnalysis.maxScore}`;
-                    document.getElementById('sitemapScoreClass').className = `analysis-score ${sitemapScoreClass}`;
-
-                    const sitemapDetails = document.getElementById('sitemapDetails');
-                    sitemapDetails.innerHTML = `
-                        <strong>Status:</strong> ${data.sitemapAnalysis.exists ? '✅ Found' : '❌ Not found'}<br>
-                        <strong>XML Valid:</strong> ${data.sitemapAnalysis.xmlValid ? '✅ Yes' : '❌ No'}<br>
-                        <strong>URLs:</strong> ${data.sitemapAnalysis.urlCount}<br>
-                        <strong>Images:</strong> ${data.sitemapAnalysis.hasImages ? '✅ Yes' : '❌ No'}
-                    `;
-
-                    // Sitemap stats
-                    const sitemapStats = document.getElementById('sitemapStats');
-                    if (data.sitemapAnalysis.priorities.length > 0 || data.sitemapAnalysis.changeFreqs.length > 0) {
-                        sitemapStats.style.display = 'grid';
-                        sitemapStats.innerHTML = `
-                            ${data.sitemapAnalysis.priorities.length > 0 ? `
-                                <div class="sitemap-stat">
-                                    <span class="sitemap-stat-number">${data.sitemapAnalysis.priorities.length}</span>
-                                    <span class="sitemap-stat-label">Priorities</span>
-                                </div>
-                            ` : ''}
-                            ${data.sitemapAnalysis.changeFreqs.length > 0 ? `
-                                <div class="sitemap-stat">
-                                    <span class="sitemap-stat-number">${data.sitemapAnalysis.changeFreqs.length}</span>
-                                    <span class="sitemap-stat-label">Change Freqs</span>
-                                </div>
-                            ` : ''}
-                        `;
-                    }
-
-                    const sitemapIssues = document.getElementById('sitemapIssues');
-                    sitemapIssues.innerHTML = data.sitemapAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const sitemapRecommendations = document.getElementById('sitemapRecommendations');
-                    sitemapRecommendations.innerHTML = data.sitemapAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-                }
-            } else {
-                aiSeoAnalysis.style.display = 'none';
-            }
-
-            // Update AEO/GEO analysis
-            const aeoGeoAnalysis = document.getElementById('aeoGeoAnalysis');
-            if (data.faqHowToAnalysis || data.breadcrumbAnalysis || data.contentStructureAnalysis || data.jsonLdGraphAnalysis || data.performanceAnalysis) {
-                aeoGeoAnalysis.style.display = 'block';
-
-                // FAQ/HowTo analysis
-                if (data.faqHowToAnalysis) {
-                    const faqHowToScore = data.faqHowToAnalysis.score;
-                    const faqHowToScoreClass = faqHowToScore >= 80 ? 'excellent' : faqHowToScore >= 60 ? 'good' : faqHowToScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('faqHowToScore').textContent = faqHowToScore;
-                    document.getElementById('faqHowToScoreClass').textContent = `/${data.faqHowToAnalysis.maxScore}`;
-                    document.getElementById('faqHowToScoreClass').className = `analysis-score ${faqHowToScoreClass}`;
-
-                    const faqHowToDetails = document.getElementById('faqHowToDetails');
-                    faqHowToDetails.innerHTML = `
-                        <strong>Status:</strong> ${data.faqHowToAnalysis.exists ? '✅ Found' : '❌ Not found'}<br>
-                        <strong>Questions:</strong> ${data.faqHowToAnalysis.totalQuestions}<br>
-                        <strong>Steps:</strong> ${data.faqHowToAnalysis.totalSteps}<br>
-                        <strong>FAQ Quality:</strong> ${data.faqHowToAnalysis.faqQuality}/100<br>
-                        <strong>HowTo Quality:</strong> ${data.faqHowToAnalysis.howToQuality}/100
-                    `;
-
-                    const faqHowToPotential = document.getElementById('faqHowToPotential');
-                    faqHowToPotential.textContent = `Featured Snippet Potential: ${data.faqHowToAnalysis.featuredSnippetPotential.toUpperCase()}`;
-                    faqHowToPotential.className = `featured-snippet-potential potential-${data.faqHowToAnalysis.featuredSnippetPotential}`;
-
-                    const faqHowToIssues = document.getElementById('faqHowToIssues');
-                    faqHowToIssues.innerHTML = data.faqHowToAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const faqHowToRecommendations = document.getElementById('faqHowToRecommendations');
-                    faqHowToRecommendations.innerHTML = data.faqHowToAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-                }
-
-                // Breadcrumb analysis
-                if (data.breadcrumbAnalysis) {
-                    const breadcrumbScore = data.breadcrumbAnalysis.score;
-                    const breadcrumbScoreClass = breadcrumbScore >= 80 ? 'excellent' : breadcrumbScore >= 60 ? 'good' : breadcrumbScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('breadcrumbScore').textContent = breadcrumbScore;
-                    document.getElementById('breadcrumbScoreClass').textContent = `/${data.breadcrumbAnalysis.maxScore}`;
-                    document.getElementById('breadcrumbScoreClass').className = `analysis-score ${breadcrumbScoreClass}`;
-
-                    const breadcrumbDetails = document.getElementById('breadcrumbDetails');
-                    breadcrumbDetails.innerHTML = `
-                        <strong>Status:</strong> ${data.breadcrumbAnalysis.exists ? '✅ Found' : '❌ Not found'}<br>
-                        <strong>Type:</strong> ${data.breadcrumbAnalysis.breadcrumbType || 'Unknown'}<br>
-                        <strong>Depth:</strong> ${data.breadcrumbAnalysis.depth} levels<br>
-                        <strong>Structured:</strong> ${data.breadcrumbAnalysis.structured ? '✅ Yes' : '❌ No'}<br>
-                        <strong>Accurate:</strong> ${data.breadcrumbAnalysis.accurate ? '✅ Yes' : '❌ No'}
-                    `;
-
-                    const breadcrumbPath = document.getElementById('breadcrumbPath');
-                    if (data.breadcrumbAnalysis.breadcrumbType === 'JSON-LD') {
-                        breadcrumbPath.style.display = 'block';
-                        breadcrumbPath.innerHTML = `
-                            <strong>Breadcrumb Path:</strong><br>
-                            <div class="breadcrumb-path">Breadcrumb structure detected</div>
-                        `;
-                    }
-
-                    const breadcrumbIssues = document.getElementById('breadcrumbIssues');
-                    breadcrumbIssues.innerHTML = data.breadcrumbAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const breadcrumbRecommendations = document.getElementById('breadcrumbRecommendations');
-                    breadcrumbRecommendations.innerHTML = data.breadcrumbAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-                }
-
-                // Content structure analysis
-                if (data.contentStructureAnalysis) {
-                    const contentScore = data.contentStructureAnalysis.score;
-                    const contentScoreClass = contentScore >= 80 ? 'excellent' : contentScore >= 60 ? 'good' : contentScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('contentScore').textContent = contentScore;
-                    document.getElementById('contentScoreClass').textContent = `/${data.contentStructureAnalysis.maxScore}`;
-                    document.getElementById('contentScoreClass').className = `analysis-score ${contentScoreClass}`;
-
-                    const contentDetails = document.getElementById('contentDetails');
-                    contentDetails.innerHTML = `
-                        <strong>Content Density:</strong> ${data.contentStructureAnalysis.contentDensity}<br>
-                        <strong>Readability Score:</strong> ${data.contentStructureAnalysis.readabilityScore}/100<br>
-                        <strong>Paragraphs:</strong> ${data.contentStructureAnalysis.paragraphStats.count}<br>
-                        <strong>Avg Length:</strong> ${data.contentStructureAnalysis.paragraphStats.averageLength} characters
-                    `;
-
-                    // Header hierarchy display
-                    const contentHeaders = document.getElementById('contentHeaders');
-                    if (Object.keys(data.contentStructureAnalysis.headerHierarchy).length > 0) {
-                        contentHeaders.style.display = 'grid';
-                        contentHeaders.innerHTML = Object.entries(data.contentStructureAnalysis.headerHierarchy)
-                            .filter(([tag, count]) => count > 0)
-                            .map(([tag, count]) => `
-                                <div class="header-item">
-                                    <span class="header-count">${count}</span>
-                                    <span>${tag.toUpperCase()}</span>
-                                </div>
-                            `).join('');
-                    }
-
-                    // Content stats
-                    const contentStats = document.getElementById('contentStats');
-                    if (data.contentStructureAnalysis.paragraphStats.count > 0) {
-                        contentStats.style.display = 'grid';
-                        contentStats.innerHTML = `
-                            <div class="content-stat">
-                                <span class="content-stat-value">${data.contentStructureAnalysis.paragraphStats.count}</span>
-                                <span>Paragraphs</span>
-                            </div>
-                            <div class="content-stat">
-                                <span class="content-stat-value">${data.contentStructureAnalysis.paragraphStats.averageLength}</span>
-                                <span>Avg Length</span>
-                            </div>
-                        `;
-                    }
-
-                    const contentIssues = document.getElementById('contentIssues');
-                    contentIssues.innerHTML = data.contentStructureAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const contentRecommendations = document.getElementById('contentRecommendations');
-                    contentRecommendations.innerHTML = data.contentStructureAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-                }
-
-                // JSON-LD @graph analysis
-                if (data.jsonLdGraphAnalysis) {
-                    const graphScore = data.jsonLdGraphAnalysis.score;
-                    const graphScoreClass = graphScore >= 80 ? 'excellent' : graphScore >= 60 ? 'good' : graphScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('graphScore').textContent = graphScore;
-                    document.getElementById('graphScoreClass').textContent = `/${data.jsonLdGraphAnalysis.maxScore}`;
-                    document.getElementById('graphScoreClass').className = `analysis-score ${graphScoreClass}`;
-
-                    const graphDetails = document.getElementById('graphDetails');
-                    graphDetails.innerHTML = `
-                        <strong>Complexity:</strong> ${data.jsonLdGraphAnalysis.graphComplexity}<br>
-                        <strong>Graph Depth:</strong> ${data.jsonLdGraphAnalysis.depth} levels<br>
-                        <strong>Schema Types:</strong> ${data.jsonLdGraphAnalysis.schemaTypes.length}<br>
-                        <strong>Cross-references:</strong> ${data.jsonLdGraphAnalysis.crossReferences}<br>
-                        <strong>Relationships:</strong> ${data.jsonLdGraphAnalysis.relationships.length}
-                    `;
-
-                    // Schema relationships display
-                    const graphRelationships = document.getElementById('graphRelationships');
-                    if (data.jsonLdGraphAnalysis.relationships.length > 0) {
-                        graphRelationships.style.display = 'block';
-                        graphRelationships.innerHTML = `
-                            <strong>Schema Relationships:</strong><br>
-                            ${data.jsonLdGraphAnalysis.relationships.map(rel => `<div class="relationship">→ ${rel}</div>`).join('')}
-                        `;
-                    }
-
-                    const graphIssues = document.getElementById('graphIssues');
-                    graphIssues.innerHTML = data.jsonLdGraphAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const graphRecommendations = document.getElementById('graphRecommendations');
-                    graphRecommendations.innerHTML = data.jsonLdGraphAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-                }
-
-                // Performance & Technical SEO analysis
-                if (data.performanceAnalysis) {
-                    const performanceScore = data.performanceAnalysis.score;
-                    const performanceScoreClass = performanceScore >= 80 ? 'excellent' : performanceScore >= 60 ? 'good' : performanceScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('performanceScore').textContent = performanceScore;
-                    document.getElementById('performanceScoreClass').textContent = `/${data.performanceAnalysis.maxScore}`;
-                    document.getElementById('performanceScoreClass').className = `analysis-score ${performanceScoreClass}`;
-
-                    const performanceDetails = document.getElementById('performanceDetails');
-                    performanceDetails.innerHTML = `
-                        <strong>Page Size:</strong> ${data.performanceAnalysis.pageSpeed.size}<br>
-                        <strong>Load Time:</strong> ${data.performanceAnalysis.pageSpeed.loadTime}<br>
-                        <strong>Resources:</strong> ${data.performanceAnalysis.pageSpeed.requests} files
-                    `;
-
-                    // Core Web Vitals display
-                    const coreWebVitals = document.getElementById('coreWebVitals');
-                    if (data.performanceAnalysis.coreWebVitals) {
-                        coreWebVitals.style.display = 'grid';
-                        coreWebVitals.innerHTML = `
-                            <div class="vital-metric ${data.performanceAnalysis.coreWebVitals.LCP.status}">
-                                <span class="metric-name">LCP</span>
-                                <span class="metric-value">${data.performanceAnalysis.coreWebVitals.LCP.value}</span>
-                                <span class="metric-score">${data.performanceAnalysis.coreWebVitals.LCP.score}/100</span>
-                            </div>
-                            <div class="vital-metric ${data.performanceAnalysis.coreWebVitals.FID.status}">
-                                <span class="metric-name">FID</span>
-                                <span class="metric-value">${data.performanceAnalysis.coreWebVitals.FID.value}</span>
-                                <span class="metric-score">${data.performanceAnalysis.coreWebVitals.FID.score}/100</span>
-                            </div>
-                            <div class="vital-metric ${data.performanceAnalysis.coreWebVitals.CLS.status}">
-                                <span class="metric-name">CLS</span>
-                                <span class="metric-value">${data.performanceAnalysis.coreWebVitals.CLS.value}</span>
-                                <span class="metric-score">${data.performanceAnalysis.coreWebVitals.CLS.score}/100</span>
-                            </div>
-                        `;
-                    }
-
-                    const performanceIssues = document.getElementById('performanceIssues');
-                    performanceIssues.innerHTML = data.performanceAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('');
-
-                    const performanceRecommendations = document.getElementById('performanceRecommendations');
-                    performanceRecommendations.innerHTML = data.performanceAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('');
-
-                    // Technical SEO analysis
-                    const technicalScore = data.performanceAnalysis.technicalSEO.score;
-                    const technicalScoreClass = technicalScore >= 80 ? 'excellent' : technicalScore >= 60 ? 'good' : technicalScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('technicalScore').textContent = technicalScore;
-                    document.getElementById('technicalScoreClass').textContent = '/100';
-                    document.getElementById('technicalScoreClass').className = `analysis-score ${technicalScoreClass}`;
-
-                    const technicalDetails = document.getElementById('technicalDetails');
-                    technicalDetails.innerHTML = `
-                        <strong>Mobile Friendly:</strong> ${data.performanceAnalysis.mobileFriendly ? '✅ Yes' : '❌ No'}<br>
-                        <strong>Technical SEO Score:</strong> ${data.performanceAnalysis.technicalSEO.score}/100<br>
-                        <strong>Canonical URL:</strong> ${data.performanceAnalysis.technicalSEO.canonicalFound ? '✅ Yes' : '❌ No'}
-                    `;
-
-                    const technicalIssues = document.getElementById('technicalIssues');
-                    technicalIssues.innerHTML = data.performanceAnalysis.issues ? data.performanceAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('') : '';
-
-                    const technicalRecommendations = document.getElementById('technicalRecommendations');
-                    technicalRecommendations.innerHTML = data.performanceAnalysis.recommendations ? data.performanceAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('') : '';
-
-                    // Mobile optimization analysis
-                    const mobileScore = data.performanceAnalysis.mobileFriendly ? 90 : 30;
-                    const mobileScoreClass = mobileScore >= 80 ? 'excellent' : mobileScore >= 60 ? 'good' : mobileScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('mobileScore').textContent = mobileScore;
-                    document.getElementById('mobileScoreClass').textContent = '/100';
-                    document.getElementById('mobileScoreClass').className = `analysis-score ${mobileScoreClass}`;
-
-                    const mobileDetails = document.getElementById('mobileDetails');
-                    mobileDetails.innerHTML = `
-                        <strong>Responsive Design:</strong> ${data.performanceAnalysis.mobileFriendly ? '✅ Yes' : '❌ No'}<br>
-                        <strong>Viewport Tag:</strong> ${data.performanceAnalysis.mobileFriendly ? '✅ Present' : '❌ Missing'}<br>
-                        <strong>Mobile Score:</strong> ${mobileScore}/100
-                    `;
-
-                    const mobileIssues = document.getElementById('mobileIssues');
-                    mobileIssues.innerHTML = data.performanceAnalysis.mobileFriendly ? '' : '<div class="analysis-issue">Missing mobile optimization - critical for SEO</div>';
-
-                    const mobileRecommendations = document.getElementById('mobileRecommendations');
-                    mobileRecommendations.innerHTML = data.performanceAnalysis.mobileFriendly ? '' : '<div class="analysis-recommendation">Implement responsive design and add viewport meta tag</div>';
-
-                    // Page speed analysis
-                    const speedScore = data.performanceAnalysis.pageSpeed.score;
-                    const speedScoreClass = speedScore >= 80 ? 'excellent' : speedScore >= 60 ? 'good' : speedScore >= 40 ? 'fair' : 'poor';
-
-                    document.getElementById('speedScore').textContent = speedScore;
-                    document.getElementById('speedScoreClass').textContent = '/100';
-                    document.getElementById('speedScoreClass').className = `analysis-score ${speedScoreClass}`;
-
-                    const speedDetails = document.getElementById('speedDetails');
-                    speedDetails.innerHTML = `
-                        <strong>HTML Size:</strong> ${data.performanceAnalysis.pageSpeed.size}<br>
-                        <strong>Load Time:</strong> ${data.performanceAnalysis.pageSpeed.loadTime}<br>
-                        <strong>Resources:</strong> ${data.performanceAnalysis.pageSpeed.requests} files
-                    `;
-
-                    const speedIssues = document.getElementById('speedIssues');
-                    speedIssues.innerHTML = data.performanceAnalysis.issues ? data.performanceAnalysis.issues.map(issue => `<div class="analysis-issue">${issue}</div>`).join('') : '';
-
-                    const speedRecommendations = document.getElementById('speedRecommendations');
-                    speedRecommendations.innerHTML = data.performanceAnalysis.recommendations ? data.performanceAnalysis.recommendations.map(rec => `<div class="analysis-recommendation">${rec}</div>`).join('') : '';
-
-                    // Show the performance section
-                    const performanceTechnicalAnalysis = document.getElementById('performanceTechnicalAnalysis');
-                    performanceTechnicalAnalysis.style.display = 'block';
-                } else {
-                    const performanceTechnicalAnalysis = document.getElementById('performanceTechnicalAnalysis');
-                    performanceTechnicalAnalysis.style.display = 'none';
-                }
-            schemaResults.innerHTML = '';
-
-            if (data.totalFound === 0) {
-                // Show no results for schemas but still show other analysis
-                const noResultsDiv = document.createElement('div');
-                noResultsDiv.className = 'no-results';
-                noResultsDiv.innerHTML = `
-                    <h3>No Schema.org structured data found</h3>
-                    <p>The website doesn't appear to have Schema.org markup, but here's the analysis of other SEO elements:</p>
-                `;
-                schemaResults.appendChild(noResultsDiv);
-            } else {
-                // Show found schemas
-                const formats = {
-                    'JSON-LD': data.jsonLd || [],
-                    'Microdata': data.microdata || [],
-                    'RDFa': data.rdfa || []
-                };
-
-                for (const [format, schemas] of Object.entries(formats)) {
-                    if (schemas.length > 0) {
-                        schemas.forEach((schema, index) => {
-                            const isMatched = data.matched.some(match =>
-                                match.type === format &&
-                                match.index === index &&
-                                match.schemaType === (schema['@type'] || schema.type)
-                            );
-
-                            addSchemaItem(schema, format, index, isMatched, data.matched);
-                        });
-                    }
-                }
-            }
-
-            results.style.display = 'block';
-        }
-
-        function addSchemaItem(schema, format, index, isMatched, matchedSchemas) {
-            const schemaItem = document.createElement('div');
-            schemaItem.className = 'schema-item';
-
-            const schemaType = schema['@type'] || schema.type || 'Unknown';
-            const isMatchClass = isMatched ? 'matched' : '';
-
-            // Find validation data for this schema
-            const matchData = matchedSchemas.find(match =>
-                match.type === format &&
-                match.index === index &&
-                match.schemaType === schemaType
-            );
-
-            const validation = matchData ? matchData.validation : null;
-            const score = validation ? validation.score : 0;
-            const maxScore = validation ? validation.maxScore : 100;
-
-            // Determine score class
-            let scoreClass = 'poor';
-            if (score >= 80) scoreClass = 'excellent';
-            else if (score >= 60) scoreClass = 'good';
-            else if (score >= 40) scoreClass = 'fair';
-
-            // Clean up the schema data for display
-            const cleanSchema = cleanSchemaForDisplay(schema);
-
-            schemaItem.innerHTML = `
-                <div class="schema-header ${isMatchClass}">
-                    <div class="schema-info">
-                        <span class="schema-type">${schemaType}</span>
-                        <span class="schema-format">${format}</span>
-                        ${isMatched ? '<span class="matched-badge">MATCH</span>' : ''}
-                        ${validation ? `<span class="validation-score ${scoreClass}">${score}/${maxScore}</span>` : ''}
-                        ${validation?.schemaDocs ? `<span class="schema-docs-link">📖 <a href="${validation.schemaDocs}" target="_blank" title="View Schema.org documentation">docs</a></span>` : ''}
-                    </div>
-                    <svg class="expand-icon" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-                    </svg>
-                </div>
-                <div class="schema-details">
-                    ${validation ? `
-                        <div class="validation-details">
-                            <div class="validation-issues">
-                                ${validation.issues.length > 0 ? validation.issues.map(issue => `
-                                    <div class="validation-issue">
-                                        ${issue.message}
-                                        ${issue.docs ? `<span class="schema-docs-link">📖 <a href="${issue.docs}" target="_blank" title="View Schema.org documentation">docs</a></span>` : ''}
-                                    </div>
-                                `).join('') : '<div class="validation-recommendation">✅ Schema validation passed!</div>'}
-                            </div>
-                            <div class="validation-recommendations">
-                                ${validation.recommendations.map(rec => `
-                                    <div class="validation-recommendation">
-                                        ${rec.message}
-                                        ${rec.docs ? `<span class="schema-docs-link">📖 <a href="${rec.docs}" target="_blank" title="View Schema.org documentation">docs</a></span>` : ''}
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : isMatched ? `
-                        <div class="validation-details">
-                            <div class="validation-recommendation">✅ Target schema detected and validated!</div>
-                        </div>
-                    ` : ''}
-                    <button class="copy-button" onclick="copyToClipboard(this)">Copy JSON</button>
-                    <pre class="json-content">${formatJson(cleanSchema)}</pre>
-                </div>
-            `;
-
-            // Add click handler for expansion
-            const header = schemaItem.querySelector('.schema-header');
-            const details = schemaItem.querySelector('.schema-details');
-            const icon = schemaItem.querySelector('.expand-icon');
-
-            header.addEventListener('click', () => {
-                schemaItem.classList.toggle('expanded');
-                details.style.display = schemaItem.classList.contains('expanded') ? 'block' : 'none';
-            });
-
-            schemaResults.appendChild(schemaItem);
-        }
-
-        function cleanSchemaForDisplay(schema) {
-            // Remove any HTML content or unwanted properties
-            const cleaned = { ...schema };
-
-            // Remove HTML property if it exists
-            delete cleaned.html;
-
-            // Clean up any properties that might have excessive whitespace
-            Object.keys(cleaned).forEach(key => {
-                if (typeof cleaned[key] === 'string') {
-                    // First trim whitespace from ends
-                    let cleanedValue = cleaned[key].trim();
-
-                    // Replace multiple consecutive newlines with double newlines (preserve paragraph breaks)
-                    cleanedValue = cleanedValue.replace(/\n\s*\n\s*\n+/g, '\n\n');
-
-                    // Replace newlines with spaces (more aggressive cleaning)
-                    cleanedValue = cleanedValue.replace(/\n\s+/g, ' ');
-
-                    // Replace multiple spaces with single space (except in URLs)
-                    if (!cleanedValue.includes('://')) {
-                        cleanedValue = cleanedValue.replace(/ {2,}/g, ' ');
-                    }
-
-                    // Replace tab characters and other whitespace
-                    cleanedValue = cleanedValue.replace(/[\t\r]/g, '');
-
-                    // Remove leading/trailing whitespace again after cleaning
-                    cleaned[key] = cleanedValue.trim();
-                }
-            });
-
-            return cleaned;
-        }
-
-        function formatJson(obj) {
-            const jsonString = JSON.stringify(obj, null, 2);
-            // Escape HTML characters to prevent display issues
-            return jsonString
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        function copyToClipboard(button) {
-            const jsonContent = button.nextElementSibling.textContent;
-            navigator.clipboard.writeText(jsonContent).then(() => {
-                const originalText = button.textContent;
-                button.textContent = 'Copied!';
-                button.classList.add('copied');
-                setTimeout(() => {
-                    button.textContent = originalText;
-                    button.classList.remove('copied');
-                }, 1000);
-            }).catch(err => {
-                console.error('Failed to copy: ', err);
-                // Fallback for older browsers
-                const textArea = document.createElement('textarea');
-                textArea.value = jsonContent;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                button.textContent = 'Copied!';
-                button.classList.add('copied');
-                setTimeout(() => {
-                    button.textContent = originalText;
-                    button.classList.remove('copied');
-                }, 1000);
-            });
-        }
-
-        // Show initial instructions
-        if (!urlInput.value) {
-            noResults.innerHTML = `
-                <h3>Ready to analyze</h3>
-                <p>Enter a website URL above and click "Analyze" to check for Schema.org structured data.</p>
-            `;
-            noResults.style.display = 'block';
-        }
-    }</script>
+      });
+
+      if (!wrap.childElementCount){
+        wrap.innerHTML = `<div class="card"><div class="muted">No schema detected on this page.</div></div>`;
+      }
+    }
+
+    function renderValidation(v){
+      const issues = (v.issues||[]).map(it => `<div class="issue">${htmlEscape(it.message||String(it))}${it.docs?` — <a class="docs" href="${it.docs}" target="_blank">docs</a>`:''}</div>`).join('');
+      const recs = (v.recommendations||[]).map(it => `<div class="rec">${htmlEscape(it.message||String(it))}${it.docs?` — <a class="docs" href="${it.docs}" target="_blank">docs</a>`:''}</div>`).join('');
+      return `
+        <div class="list">
+          <div><b>Validation details</b></div>
+          ${issues || '<div class="rec">✅ No blocking issues.</div>'}
+          ${recs}
+        </div>
+      `;
+    }
+
+  </script>
 </body>
 </html>

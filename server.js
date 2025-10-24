@@ -1,401 +1,584 @@
+// server.js
+// Schema / SEO / AEO / GEO Analyzer (full, hardened)
+// ---------------------------------------------------
+
 const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
 
-// Create Express app
+// -------------------------------------
+// App setup
+// -------------------------------------
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Target schemas to match
+// -------------------------------------
+// Constants / helpers
+// -------------------------------------
 const TARGET_SCHEMAS = [
-  'Hotel',
-  'LodgingBusiness',
-  'FAQPage',
-  'Organization',
-  'Review',
-  'AggregateRating',
-  'LocalBusiness',
-  'Place',
-  'Product',
-  'Service',
-  'JobPosting',
-  'Restaurant',
-  'Event',
-  'BusinessEvent'
+  'Hotel', 'LodgingBusiness', 'FAQPage', 'Organization', 'Review', 'AggregateRating',
+  'LocalBusiness', 'Place', 'Product', 'Service', 'JobPosting', 'Restaurant',
+  'Event', 'BusinessEvent', 'HowTo', 'Article', 'QAPage', 'WebSite', 'BreadcrumbList',
+  'VideoObject', 'ImageObject', 'ItemList', 'PostalAddress', 'GeoCoordinates', 'Offer'
 ];
 
-// Extract JSON-LD from HTML
+function safeStr(x) {
+  return (typeof x === 'string') ? x : '';
+}
+
+function normalizeType(raw) {
+  if (!raw) return '';
+  if (Array.isArray(raw)) return raw.map(s => String(s)).join(',');
+  return String(raw);
+}
+
+function isValidUrl(value) {
+  try { new URL(value); return true; } catch { return false; }
+}
+
+function isValidDate(value) {
+  // ISO-ish date test
+  return /^\d{4}-\d{2}-\d{2}([Tt ][\d:.\-+Zz]+)?$/.test(String(value));
+}
+
+function isValidTime(value) {
+  const s = String(value);
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(s) || /^\d{2}:\d{2}:\d{2}$/.test(s);
+}
+
+function isAbsolute(url) {
+  return /^https?:\/\//i.test(String(url || ''));
+}
+
+function absolutize(url, base) {
+  try {
+    if (!url) return url;
+    const abs = new URL(url, base);
+    return abs.href;
+  } catch {
+    return url;
+  }
+}
+
+function textFrom($, el) {
+  return $(el).text().replace(/\s+/g, ' ').trim();
+}
+
+// Pure-JS Flesch-Kincaid helpers
+function countSyllables(word) {
+  const w = String(word || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (!w) return 0;
+  if (w.length <= 3) return 1;
+  return (w
+    .replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '')
+    .replace(/^y/, '')
+    .match(/[aeiouy]{1,2}/g) || []).length;
+}
+function countWords(text) {
+  return (String(text || '').match(/[A-Za-zÀ-ÖØ-öø-ÿ]+/g) || []).length;
+}
+function countSentences(text) {
+  // heuristic: split on ., !, ?
+  const s = String(text || '').split(/[.!?]+/).filter(Boolean);
+  return Math.max(1, s.length);
+}
+function fleschKincaidReadingEase(text) {
+  const words = countWords(text);
+  const sentences = countSentences(text);
+  const syllables = (String(text || '').match(/[A-Za-zÀ-ÖØ-öø-ÿ]+/g) || [])
+    .reduce((sum, w) => sum + countSyllables(w), 0);
+  if (words === 0) return 0;
+  const ASL = words / sentences;       // average sentence length
+  const ASW = syllables / words;       // average syllables per word
+  // Flesch Reading Ease (higher is easier): 206.835 − 1.015×ASL − 84.6×ASW
+  const score = 206.835 - (1.015 * ASL) - (84.6 * ASW);
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+// -------------------------------------
+// Extraction: JSON-LD, Microdata, RDFa
+// -------------------------------------
+function cleanJsonLikeString(s) {
+  let content = String(s || '').trim();
+  if (!content) return '';
+
+  // Remove HTML comments
+  content = content.replace(/<!--[\s\S]*?-->/g, '');
+
+  // Fix property names missing quotes: { foo: 1 } -> { "foo": 1 }
+  content = content.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
+
+  // Remove trailing commas before } or ]
+  content = content.replace(/,(\s*[}\]])/g, '$1');
+
+  // Remove trailing comma at end
+  content = content.replace(/,\s*$/, '');
+
+  return content;
+}
+
 function extractJsonLd($) {
-  const jsonLd = [];
-  $('script[type="application/ld+json"]').each((i, elem) => {
+  const out = [];
+  $('script[type="application/ld+json"]').each((i, el) => {
     try {
-      let content = $(elem).html();
-      if (content) {
-        // Clean the content to handle common JSON-LD issues
-        content = content.trim();
-
-        // Remove trailing commas before closing braces/brackets
-        content = content.replace(/,(\s*[}\]])/g, '$1');
-
-        // Remove any trailing commas at the end of the content
-        content = content.replace(/,\s*$/, '');
-
-        const parsed = JSON.parse(content);
-
-        // Handle different JSON-LD structures
-        if (Array.isArray(parsed)) {
-          jsonLd.push(...parsed);
-        } else if (parsed['@graph'] && Array.isArray(parsed['@graph'])) {
-          // Handle @graph structures (common in complex schemas)
-          jsonLd.push(...parsed['@graph']);
-        } else if (parsed['@type'] || parsed.type) {
-          // Single schema object
-          jsonLd.push(parsed);
-        }
-      }
-    } catch (error) {
-      console.error('Error parsing JSON-LD:', error.message);
-      console.error('Attempting to fix malformed JSON...');
-
+      let content = $(el).html();
+      if (!content) return;
+      content = cleanJsonLikeString(content);
+      let parsed;
       try {
-        let content = $(elem).html();
-        if (content) {
-          // More aggressive cleaning for malformed JSON-LD
-          content = content.trim();
-
-          // Remove HTML comments if any
-          content = content.replace(/<!--[\s\S]*?-->/g, '');
-
-          // Remove trailing commas more aggressively
-          content = content.replace(/,(\s*[}\]])/g, '$1');
-          content = content.replace(/,\s*([}\]])/g, '$1');
-
-          // Fix common issues like missing quotes or commas
-          content = content.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
-
-          // Try to extract just the @graph part if it exists
-          const graphMatch = content.match(/"@graph"\s*:\s*(\[[\s\S]*?\])/);
-          if (graphMatch) {
-            try {
-              const graphContent = JSON.parse(graphMatch[1]);
-              if (Array.isArray(graphContent)) {
-                jsonLd.push(...graphContent);
-                console.log('Successfully extracted @graph content after cleaning');
-              }
-            } catch (graphError) {
-              console.error('Failed to parse @graph:', graphError.message);
+        parsed = JSON.parse(content);
+      } catch {
+        // try @graph extraction
+        const graphMatch = content.match(/"@graph"\s*:\s*(\[[\s\S]*?\])/);
+        if (graphMatch) {
+          try {
+            const g = JSON.parse(graphMatch[1]);
+            if (Array.isArray(g)) {
+              g.forEach(node => out.push(node));
+              return;
             }
-          }
+          } catch {}
         }
-      } catch (fixError) {
-        console.error('Failed to fix JSON-LD:', fixError.message);
+        return; // skip malformed
       }
-    }
-  });
-  return jsonLd;
-}
 
-// Extract Microdata from HTML
-function extractMicrodata($) {
-  const microdata = [];
-
-  $('[itemtype]').each((i, elem) => {
-    try {
-      const $elem = $(elem);
-      const itemtype = $elem.attr('itemtype');
-      const itemid = $elem.attr('itemid') || null;
-
-      if (itemtype && itemtype.includes('schema.org')) {
-        const schemaType = itemtype.replace('https://schema.org/', '').replace('http://schema.org/', '');
-
-        const properties = {};
-        $elem.find('[itemprop]').each((j, propElem) => {
-          try {
-            const $propElem = $(propElem);
-            const prop = $propElem.attr('itemprop');
-            let value = $propElem.attr('content') || $propElem.text() || $propElem.attr('href') || $propElem.attr('src');
-
-            // Handle nested microdata (but prevent infinite recursion)
-            if ($propElem.attr('itemtype') && j < 10) { // Limit depth
-              value = extractMicrodata($propElem);
-            }
-
-            if (prop && value) {
-              properties[prop] = value;
-            }
-          } catch (propError) {
-            console.error('Error extracting microdata property:', propError.message);
-          }
-        });
-
-        microdata.push({
-          type: schemaType,
-          id: itemid,
-          properties: properties
-        });
+      if (Array.isArray(parsed)) {
+        parsed.forEach(item => out.push(item));
+      } else if (parsed && typeof parsed === 'object') {
+        if (parsed['@graph'] && Array.isArray(parsed['@graph'])) {
+          parsed['@graph'].forEach(item => out.push(item));
+        } else {
+          out.push(parsed);
+        }
       }
-    } catch (error) {
-      console.error('Error extracting microdata:', error.message);
+    } catch (e) {
+      // skip
     }
   });
 
-  return microdata;
+  // Normalize @type to string, and absolutize URLs where safe
+  return out.map(obj => normalizeSchemaObject(obj));
 }
 
-// Extract RDFa from HTML
-function extractRdfa($) {
-  const rdfa = [];
+function normalizeSchemaObject(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const clone = JSON.parse(JSON.stringify(obj));
 
+  // normalize @type to string (if array, join with comma for display/validation)
+  if (clone['@type']) clone['@type'] = normalizeType(clone['@type']);
+  if (!clone['@type'] && clone.type) {
+    clone['@type'] = normalizeType(clone.type);
+    delete clone.type;
+  }
+  return clone;
+}
+
+function extractMicrodata($, baseUrl) {
+  const results = [];
+
+  $('[itemscope]').each((i, elem) => {
+    const $el = $(elem);
+    const itemtype = $el.attr('itemtype') || '';
+    const type = itemtype.includes('schema.org/')
+      ? itemtype.replace(/^https?:\/\/schema\.org\//, '')
+      : '';
+    const item = { '@type': type || 'Thing' };
+
+    // Collect itemprops *within* this itemscope (not in nested scopes)
+    const props = {};
+    $el.find('[itemprop]').each((j, propEl) => {
+      const $p = $(propEl);
+      // ensure this prop belongs to current itemscope (closest itemscope is self or descendant)
+      const ownerScope = $p.closest('[itemscope]').get(0);
+      if (ownerScope !== elem) return; // belongs to nested scope; skip at this level
+
+      const propName = $p.attr('itemprop');
+      let value =
+        $p.attr('content') ||
+        $p.attr('href') ||
+        $p.attr('src') ||
+        textFrom($, $p);
+
+      // absolutize href/src if present
+      if (($p.is('a') || $p.is('img') || $p.attr('href') || $p.attr('src')) && baseUrl) {
+        value = absolutize(value, baseUrl);
+      }
+
+      // If this prop is also an itemscope, parse nested as object
+      if ($p.is('[itemscope]')) {
+        const nested = extractMicrodata($p, baseUrl);
+        // nested will return array with a root; take first
+        if (nested.length > 0) value = nested[0];
+      }
+
+      if (propName) {
+        if (props[propName]) {
+          if (!Array.isArray(props[propName])) props[propName] = [props[propName]];
+          props[propName].push(value);
+        } else {
+          props[propName] = value;
+        }
+      }
+    });
+
+    Object.assign(item, props);
+    results.push(item);
+  });
+
+  return results.map(obj => normalizeSchemaObject(obj));
+}
+
+function extractRdfa($, baseUrl) {
+  const results = [];
   $('[typeof]').each((i, elem) => {
-    try {
-      const $elem = $(elem);
-      const typeOfAttr = $elem.attr('typeof');
-      const about = $elem.attr('about') || null;
-      const resource = $elem.attr('resource') || null;
+    const $el = $(elem);
+    let type = $el.attr('typeof') || '';
+    if (type.includes('schema:')) type = type.replace(/schema:/g, '');
+    if (type.includes('schema.org/')) type = type.replace(/^https?:\/\/schema\.org\//, '');
 
-      if (typeOfAttr && (typeOfAttr.includes('schema.org') || typeOfAttr.includes('schema:'))) {
-        let schemaType = typeOfAttr.replace('schema:', '').replace('https://schema.org/', '').replace('http://schema.org/', '');
+    const item = { '@type': type || 'Thing' };
+    const props = {};
+    $el.find('[property]').each((j, propEl) => {
+      const $p = $(propEl);
+      const propName = ($p.attr('property') || '').replace(/^schema:/, '');
+      let value =
+        $p.attr('content') ||
+        $p.attr('href') ||
+        $p.attr('src') ||
+        textFrom($, $p);
 
-        const properties = {};
-        $elem.find('[property]').each((j, propElem) => {
-          try {
-            const $propElem = $(propElem);
-            const prop = $propElem.attr('property');
-            let value = $propElem.attr('content') || $propElem.text() || $propElem.attr('href') || $propElem.attr('src');
-
-            if (prop && value) {
-              properties[prop.replace('schema:', '')] = value;
-            }
-          } catch (propError) {
-            console.error('Error extracting RDFa property:', propError.message);
-          }
-        });
-
-        rdfa.push({
-          type: schemaType,
-          about: about,
-          resource: resource,
-          properties: properties
-        });
+      if (($p.attr('href') || $p.attr('src')) && baseUrl) {
+        value = absolutize(value, baseUrl);
       }
-    } catch (error) {
-      console.error('Error extracting RDFa:', error.message);
-    }
+
+      if (propName) {
+        if (props[propName]) {
+          if (!Array.isArray(props[propName])) props[propName] = [props[propName]];
+          props[propName].push(value);
+        } else {
+          props[propName] = value;
+        }
+      }
+    });
+
+    Object.assign(item, props);
+    results.push(item);
   });
 
-  return rdfa;
+  return results.map(obj => normalizeSchemaObject(obj));
 }
 
-// Schema.org validation rules with documentation links
+// -------------------------------------
+// Validation Rules (abbrev but solid)
+// -------------------------------------
 const SCHEMA_VALIDATION_RULES = {
-  'Hotel': {
+  Hotel: {
+    docs: 'https://schema.org/Hotel',
     required: ['name', 'address'],
-    recommended: ['telephone', 'description', 'image', 'priceRange', 'amenityFeature'],
+    recommended: ['telephone', 'description', 'image', 'priceRange', 'amenityFeature', 'url'],
     properties: {
       name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
-      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
-      telephone: { type: 'string', recommended: true, docs: 'https://schema.org/telephone' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      telephone: { type: 'string', docs: 'https://schema.org/telephone' },
       address: { type: 'object', required: true, docs: 'https://schema.org/address' },
-      priceRange: { type: 'string', recommended: true, docs: 'https://schema.org/priceRange' },
-      amenityFeature: { type: 'array', recommended: true, docs: 'https://schema.org/amenityFeature' },
+      priceRange: { type: 'string', docs: 'https://schema.org/priceRange' },
+      amenityFeature: { type: 'array', docs: 'https://schema.org/amenityFeature' },
       checkinTime: { type: 'string', format: 'time', docs: 'https://schema.org/checkinTime' },
       checkoutTime: { type: 'string', format: 'time', docs: 'https://schema.org/checkoutTime' }
-    },
-    docs: 'https://schema.org/Hotel'
+    }
   },
-  'LodgingBusiness': {
+  LodgingBusiness: {
+    docs: 'https://schema.org/LodgingBusiness',
     required: ['name', 'address'],
-    recommended: ['telephone', 'description', 'image', 'priceRange'],
+    recommended: ['telephone', 'description', 'image', 'priceRange', 'url'],
     properties: {
       name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
-      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
-      telephone: { type: 'string', recommended: true, docs: 'https://schema.org/telephone' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      telephone: { type: 'string', docs: 'https://schema.org/telephone' },
       address: { type: 'object', required: true, docs: 'https://schema.org/address' },
-      priceRange: { type: 'string', recommended: true, docs: 'https://schema.org/priceRange' }
-    },
-    docs: 'https://schema.org/LodgingBusiness'
+      priceRange: { type: 'string', docs: 'https://schema.org/priceRange' }
+    }
   },
-  'FAQPage': {
+  Organization: {
+    docs: 'https://schema.org/Organization',
+    required: ['name'],
+    recommended: ['url', 'description', 'image', 'address', 'telephone', 'sameAs', 'logo'],
+    properties: {
+      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      logo: { type: 'url', docs: 'https://schema.org/logo' },
+      address: { type: 'object', docs: 'https://schema.org/address' },
+      telephone: { type: 'string', docs: 'https://schema.org/telephone' },
+      sameAs: { type: 'array', docs: 'https://schema.org/sameAs' }
+    }
+  },
+  LocalBusiness: {
+    docs: 'https://schema.org/LocalBusiness',
+    required: ['name', 'address'],
+    recommended: ['telephone', 'description', 'image', 'url', 'priceRange', 'openingHours', 'geo', 'sameAs'],
+    properties: {
+      name: { docs: 'https://schema.org/name' },
+      description: { docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      telephone: { type: 'string', docs: 'https://schema.org/telephone' },
+      address: { type: 'object', docs: 'https://schema.org/address' },
+      priceRange: { type: 'string', docs: 'https://schema.org/priceRange' },
+      openingHours: { type: 'string', docs: 'https://schema.org/openingHours' },
+      geo: { type: 'object', docs: 'https://schema.org/geo' },
+      sameAs: { type: 'array', docs: 'https://schema.org/sameAs' }
+    }
+  },
+  FAQPage: {
+    docs: 'https://schema.org/FAQPage',
     required: ['mainEntity'],
     recommended: ['name', 'description'],
     properties: {
-      name: { type: 'string', recommended: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      mainEntity: { type: 'array', required: true, docs: 'https://schema.org/mainEntity' }
-    },
-    docs: 'https://schema.org/FAQPage'
+      mainEntity: { type: 'array', required: true, docs: 'https://schema.org/mainEntity' },
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      description: { type: 'string', docs: 'https://schema.org/description' }
+    }
   },
-  'Organization': {
-    required: ['name'],
-    recommended: ['url', 'description', 'image', 'address', 'telephone'],
+  HowTo: {
+    docs: 'https://schema.org/HowTo',
+    required: ['name', 'step'],
+    recommended: ['description', 'image', 'supply', 'tool', 'totalTime'],
     properties: {
       name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
-      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
-      address: { type: 'object', recommended: true, docs: 'https://schema.org/address' },
-      telephone: { type: 'string', recommended: true, docs: 'https://schema.org/telephone' },
-      sameAs: { type: 'array', recommended: true, docs: 'https://schema.org/sameAs' }
-    },
-    docs: 'https://schema.org/Organization'
+      step: { type: 'array', required: true, docs: 'https://schema.org/step' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      supply: { type: 'array', docs: 'https://schema.org/supply' },
+      tool: { type: 'array', docs: 'https://schema.org/tool' },
+      totalTime: { type: 'string', docs: 'https://schema.org/totalTime' }
+    }
   },
-  'Review': {
+  Review: {
+    docs: 'https://schema.org/Review',
     required: ['reviewRating', 'author'],
     recommended: ['reviewBody', 'datePublished', 'itemReviewed'],
     properties: {
       reviewRating: { type: 'object', required: true, docs: 'https://schema.org/reviewRating' },
       author: { type: 'object', required: true, docs: 'https://schema.org/author' },
-      reviewBody: { type: 'string', recommended: true, docs: 'https://schema.org/reviewBody' },
-      datePublished: { type: 'string', format: 'date', recommended: true, docs: 'https://schema.org/datePublished' },
-      itemReviewed: { type: 'object', recommended: true, docs: 'https://schema.org/itemReviewed' }
-    },
-    docs: 'https://schema.org/Review'
+      reviewBody: { type: 'string', docs: 'https://schema.org/reviewBody' },
+      datePublished: { type: 'string', format: 'date', docs: 'https://schema.org/datePublished' },
+      itemReviewed: { type: 'object', docs: 'https://schema.org/itemReviewed' }
+    }
   },
-  'AggregateRating': {
+  AggregateRating: {
+    docs: 'https://schema.org/AggregateRating',
     required: ['ratingValue', 'reviewCount'],
     recommended: ['bestRating', 'worstRating'],
     properties: {
-      ratingValue: { type: 'number', required: true, docs: 'https://schema.org/ratingValue' },
-      reviewCount: { type: 'number', required: true, docs: 'https://schema.org/reviewCount' },
-      bestRating: { type: 'number', recommended: true, docs: 'https://schema.org/bestRating' },
-      worstRating: { type: 'number', recommended: true, docs: 'https://schema.org/worstRating' }
+      ratingValue: { type: 'number', docs: 'https://schema.org/ratingValue' },
+      reviewCount: { type: 'number', docs: 'https://schema.org/reviewCount' },
+      bestRating: { type: 'number', docs: 'https://schema.org/bestRating' },
+      worstRating: { type: 'number', docs: 'https://schema.org/worstRating' }
+    }
   },
-  'LocalBusiness': {
-    required: ['name', 'address'],
-    recommended: ['telephone', 'description', 'image', 'url', 'priceRange', 'openingHours'],
-    properties: {
-      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
-      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
-      telephone: { type: 'string', recommended: true, docs: 'https://schema.org/telephone' },
-      address: { type: 'object', required: true, docs: 'https://schema.org/address' },
-      priceRange: { type: 'string', recommended: true, docs: 'https://schema.org/priceRange' },
-      openingHours: { type: 'string', recommended: true, docs: 'https://schema.org/openingHours' },
-      geo: { type: 'object', recommended: true, docs: 'https://schema.org/geo' },
-      sameAs: { type: 'array', recommended: true, docs: 'https://schema.org/sameAs' }
-    },
-    docs: 'https://schema.org/LocalBusiness'
-  },
-  'Place': {
+  Place: {
+    docs: 'https://schema.org/Place',
     required: ['name'],
-    recommended: ['address', 'description', 'image', 'url', 'telephone'],
+    recommended: ['address', 'description', 'image', 'url', 'telephone', 'geo'],
     properties: {
-      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
-      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
-      telephone: { type: 'string', recommended: true, docs: 'https://schema.org/telephone' },
-      address: { type: 'object', recommended: true, docs: 'https://schema.org/address' },
-      geo: { type: 'object', recommended: true, docs: 'https://schema.org/geo' }
-    },
-    docs: 'https://schema.org/Place'
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      address: { type: 'object', docs: 'https://schema.org/address' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      telephone: { type: 'string', docs: 'https://schema.org/telephone' },
+      geo: { type: 'object', docs: 'https://schema.org/geo' }
+    }
   },
-  'Product': {
+  Product: {
+    docs: 'https://schema.org/Product',
     required: ['name'],
-    recommended: ['description', 'image', 'offers', 'category', 'brand'],
+    recommended: ['description', 'image', 'offers', 'category', 'brand', 'aggregateRating'],
     properties: {
-      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
-      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
-      category: { type: 'string', recommended: true, docs: 'https://schema.org/category' },
-      brand: { type: 'object', recommended: true, docs: 'https://schema.org/brand' },
-      offers: { type: 'object', recommended: true, docs: 'https://schema.org/offers' },
-      priceRange: { type: 'string', recommended: true, docs: 'https://schema.org/priceRange' }
-    },
-    docs: 'https://schema.org/Product'
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      category: { type: 'string', docs: 'https://schema.org/category' },
+      brand: { type: 'object', docs: 'https://schema.org/brand' },
+      offers: { type: 'object', docs: 'https://schema.org/offers' },
+      aggregateRating: { type: 'object', docs: 'https://schema.org/aggregateRating' },
+      priceRange: { type: 'string', docs: 'https://schema.org/priceRange' }
+    }
   },
-  'Service': {
+  Service: {
+    docs: 'https://schema.org/Service',
     required: ['name', 'provider'],
     recommended: ['description', 'image', 'offers', 'serviceType'],
     properties: {
-      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
-      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
-      serviceType: { type: 'string', recommended: true, docs: 'https://schema.org/serviceType' },
-      provider: { type: 'object', required: true, docs: 'https://schema.org/provider' },
-      offers: { type: 'object', recommended: true, docs: 'https://schema.org/offers' },
-      areaServed: { type: 'object', recommended: true, docs: 'https://schema.org/areaServed' }
-    },
-    docs: 'https://schema.org/Service'
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      provider: { type: 'object', docs: 'https://schema.org/provider' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      serviceType: { type: 'string', docs: 'https://schema.org/serviceType' },
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      offers: { type: 'object', docs: 'https://schema.org/offers' },
+      areaServed: { type: 'object', docs: 'https://schema.org/areaServed' }
+    }
   },
-  'JobPosting': {
+  JobPosting: {
+    docs: 'https://schema.org/JobPosting',
     required: ['title', 'hiringOrganization'],
     recommended: ['description', 'datePosted', 'employmentType', 'jobLocation'],
     properties: {
-      title: { type: 'string', required: true, docs: 'https://schema.org/title' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      datePosted: { type: 'string', format: 'date', recommended: true, docs: 'https://schema.org/datePosted' },
-      employmentType: { type: 'string', recommended: true, docs: 'https://schema.org/employmentType' },
-      hiringOrganization: { type: 'object', required: true, docs: 'https://schema.org/hiringOrganization' },
-      jobLocation: { type: 'object', recommended: true, docs: 'https://schema.org/jobLocation' },
-      salaryCurrency: { type: 'string', recommended: true, docs: 'https://schema.org/salaryCurrency' }
-    },
-    docs: 'https://schema.org/JobPosting'
+      title: { type: 'string', docs: 'https://schema.org/title' },
+      hiringOrganization: { type: 'object', docs: 'https://schema.org/hiringOrganization' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      datePosted: { type: 'string', format: 'date', docs: 'https://schema.org/datePosted' },
+      employmentType: { type: 'string', docs: 'https://schema.org/employmentType' },
+      jobLocation: { type: 'object', docs: 'https://schema.org/jobLocation' },
+      salaryCurrency: { type: 'string', docs: 'https://schema.org/salaryCurrency' }
+    }
   },
-  'Restaurant': {
+  Restaurant: {
+    docs: 'https://schema.org/Restaurant',
     required: ['name', 'address'],
     recommended: ['telephone', 'description', 'image', 'priceRange', 'servesCuisine', 'menu'],
     properties: {
-      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
-      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
-      telephone: { type: 'string', recommended: true, docs: 'https://schema.org/telephone' },
-      address: { type: 'object', required: true, docs: 'https://schema.org/address' },
-      priceRange: { type: 'string', recommended: true, docs: 'https://schema.org/priceRange' },
-      servesCuisine: { type: 'string', recommended: true, docs: 'https://schema.org/servesCuisine' },
-      menu: { type: 'url', recommended: true, docs: 'https://schema.org/menu' },
-      acceptsReservations: { type: 'boolean', recommended: true, docs: 'https://schema.org/acceptsReservations' }
-    },
-    docs: 'https://schema.org/Restaurant'
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      address: { type: 'object', docs: 'https://schema.org/address' },
+      telephone: { type: 'string', docs: 'https://schema.org/telephone' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      priceRange: { type: 'string', docs: 'https://schema.org/priceRange' },
+      servesCuisine: { type: 'string', docs: 'https://schema.org/servesCuisine' },
+      menu: { type: 'url', docs: 'https://schema.org/menu' },
+      acceptsReservations: { type: 'boolean', docs: 'https://schema.org/acceptsReservations' }
+    }
   },
-  'Event': {
+  Event: {
+    docs: 'https://schema.org/Event',
     required: ['name', 'startDate'],
-    recommended: ['description', 'endDate', 'location', 'offers', 'image'],
+    recommended: ['description', 'endDate', 'location', 'offers', 'image', 'url', 'eventStatus'],
     properties: {
-      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      startDate: { type: 'string', format: 'date', required: true, docs: 'https://schema.org/startDate' },
-      endDate: { type: 'string', format: 'date', recommended: true, docs: 'https://schema.org/endDate' },
-      location: { type: 'object', recommended: true, docs: 'https://schema.org/location' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' },
-      url: { type: 'url', recommended: true, docs: 'https://schema.org/url' },
-      offers: { type: 'object', recommended: true, docs: 'https://schema.org/offers' },
-      eventStatus: { type: 'string', recommended: true, docs: 'https://schema.org/eventStatus' }
-    },
-    docs: 'https://schema.org/Event'
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      startDate: { type: 'string', format: 'date', docs: 'https://schema.org/startDate' },
+      endDate: { type: 'string', format: 'date', docs: 'https://schema.org/endDate' },
+      location: { type: 'object', docs: 'https://schema.org/location' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      image: { type: 'url', docs: 'https://schema.org/image' },
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      offers: { type: 'object', docs: 'https://schema.org/offers' },
+      eventStatus: { type: 'string', docs: 'https://schema.org/eventStatus' }
+    }
   },
-  'BusinessEvent': {
+  BusinessEvent: {
+    docs: 'https://schema.org/BusinessEvent',
     required: ['name', 'startDate'],
-    recommended: ['description', 'endDate', 'location', 'organizer'],
+    recommended: ['description', 'endDate', 'location', 'organizer', 'image'],
     properties: {
-      name: { type: 'string', required: true, docs: 'https://schema.org/name' },
-      description: { type: 'string', recommended: true, docs: 'https://schema.org/description' },
-      startDate: { type: 'string', format: 'date', required: true, docs: 'https://schema.org/startDate' },
-      endDate: { type: 'string', format: 'date', recommended: true, docs: 'https://schema.org/endDate' },
-      location: { type: 'object', recommended: true, docs: 'https://schema.org/location' },
-      organizer: { type: 'object', recommended: true, docs: 'https://schema.org/organizer' },
-      image: { type: 'url', recommended: true, docs: 'https://schema.org/image' }, // Added trailing comma
-    },
-    docs: 'https://schema.org/BusinessEvent'
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      startDate: { type: 'string', format: 'date', docs: 'https://schema.org/startDate' },
+      endDate: { type: 'string', format: 'date', docs: 'https://schema.org/endDate' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      location: { type: 'object', docs: 'https://schema.org/location' },
+      organizer: { type: 'object', docs: 'https://schema.org/organizer' },
+      image: { type: 'url', docs: 'https://schema.org/image' }
+    }
+  },
+  WebSite: {
+    docs: 'https://schema.org/WebSite',
+    required: ['name'],
+    recommended: ['url', 'potentialAction'],
+    properties: {
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      potentialAction: { type: 'object', docs: 'https://schema.org/potentialAction' }
+    }
+  },
+  BreadcrumbList: {
+    docs: 'https://schema.org/BreadcrumbList',
+    required: ['itemListElement'],
+    recommended: [],
+    properties: {
+      itemListElement: { type: 'array', docs: 'https://schema.org/itemListElement' }
+    }
+  },
+  VideoObject: {
+    docs: 'https://schema.org/VideoObject',
+    required: ['name', 'thumbnailUrl', 'uploadDate'],
+    recommended: ['description', 'contentUrl', 'embedUrl', 'duration', 'inLanguage'],
+    properties: {
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      thumbnailUrl: { type: 'url', docs: 'https://schema.org/thumbnailUrl' },
+      uploadDate: { type: 'string', format: 'date', docs: 'https://schema.org/uploadDate' },
+      description: { type: 'string', docs: 'https://schema.org/description' },
+      contentUrl: { type: 'url', docs: 'https://schema.org/contentUrl' },
+      embedUrl: { type: 'url', docs: 'https://schema.org/embedUrl' },
+      duration: { type: 'string', docs: 'https://schema.org/duration' },
+      inLanguage: { type: 'string', docs: 'https://schema.org/inLanguage' }
+    }
+  },
+  ImageObject: {
+    docs: 'https://schema.org/ImageObject',
+    required: ['url'],
+    recommended: ['width', 'height', 'caption'],
+    properties: {
+      url: { type: 'url', docs: 'https://schema.org/url' },
+      width: { type: 'number', docs: 'https://schema.org/width' },
+      height: { type: 'number', docs: 'https://schema.org/height' },
+      caption: { type: 'string', docs: 'https://schema.org/caption' }
+    }
+  },
+  ItemList: {
+    docs: 'https://schema.org/ItemList',
+    required: ['itemListElement'],
+    recommended: ['name'],
+    properties: {
+      itemListElement: { type: 'array', docs: 'https://schema.org/itemListElement' },
+      name: { type: 'string', docs: 'https://schema.org/name' }
+    }
+  },
+  PostalAddress: {
+    docs: 'https://schema.org/PostalAddress',
+    required: ['streetAddress', 'postalCode', 'addressLocality'],
+    recommended: [],
+    properties: {
+      streetAddress: { type: 'string', docs: 'https://schema.org/streetAddress' },
+      postalCode: { type: 'string', docs: 'https://schema.org/postalCode' },
+      addressLocality: { type: 'string', docs: 'https://schema.org/addressLocality' }
+    }
+  },
+  GeoCoordinates: {
+    docs: 'https://schema.org/GeoCoordinates',
+    required: ['latitude', 'longitude'],
+    recommended: [],
+    properties: {
+      latitude: { type: 'number', docs: 'https://schema.org/latitude' },
+      longitude: { type: 'number', docs: 'https://schema.org/longitude' }
+    }
+  },
+  Offer: {
+    docs: 'https://schema.org/Offer',
+    required: ['name'],
+    recommended: ['price', 'priceCurrency', 'availability', 'url'],
+    properties: {
+      name: { type: 'string', docs: 'https://schema.org/name' },
+      price: { type: 'number', docs: 'https://schema.org/price' },
+      priceCurrency: { type: 'string', docs: 'https://schema.org/priceCurrency' },
+      availability: { type: 'string', docs: 'https://schema.org/availability' },
+      url: { type: 'url', docs: 'https://schema.org/url' }
+    }
   }
 };
 
-// Validate a single schema object
 function validateSchema(schema, schemaType) {
   const validation = {
     isValid: true,
@@ -403,7 +586,7 @@ function validateSchema(schema, schemaType) {
     maxScore: 100,
     issues: [],
     recommendations: [],
-    schemaDocs: ''
+    schemaDocs: SCHEMA_VALIDATION_RULES[schemaType]?.docs || ''
   };
 
   const rules = SCHEMA_VALIDATION_RULES[schemaType];
@@ -413,1702 +596,849 @@ function validateSchema(schema, schemaType) {
     return validation;
   }
 
-  validation.schemaDocs = rules.docs || '';
+  let reqScore = 0;
+  let recScore = 0;
 
-  let requiredScore = 0;
-  let recommendedScore = 0;
-
-  // Check required properties
-  rules.required.forEach(prop => {
-    if (!schema[prop] && !schema['@' + prop]) {
-      const propDocs = rules.properties[prop]?.docs || rules.docs;
+  (rules.required || []).forEach(prop => {
+    if (schema[prop] == null && schema['@' + prop] == null) {
       validation.issues.push({
         message: `Missing required property: ${prop}`,
-        docs: propDocs,
+        docs: rules.properties[prop]?.docs || rules.docs,
         property: prop,
         type: 'required'
       });
       validation.isValid = false;
     } else {
-      requiredScore += 25; // 25 points per required property
+      reqScore += 25;
     }
   });
 
-  // Check recommended properties
-  rules.recommended.forEach(prop => {
-    if (!schema[prop] && !schema['@' + prop]) {
-      const propDocs = rules.properties[prop]?.docs || rules.docs;
+  (rules.recommended || []).forEach(prop => {
+    if (schema[prop] == null && schema['@' + prop] == null) {
       validation.recommendations.push({
         message: `Consider adding recommended property: ${prop}`,
-        docs: propDocs,
+        docs: rules.properties[prop]?.docs || rules.docs,
         property: prop,
         type: 'recommended'
       });
     } else {
-      recommendedScore += 15; // 15 points per recommended property
+      recScore += 15;
     }
   });
 
-  // Validate property data types and formats
-  Object.entries(rules.properties).forEach(([prop, rule]) => {
-    const value = schema[prop] || schema['@' + prop];
-    if (value) {
-      // Type validation
-      if (rule.type === 'url' && !isValidUrl(value)) {
+  // type/format checks
+  Object.entries(rules.properties || {}).forEach(([prop, rule]) => {
+    const value = schema[prop] ?? schema['@' + prop];
+    if (value == null) return;
+
+    if (rule.type === 'url') {
+      const v = Array.isArray(value) ? value[0] : value;
+      if (!isValidUrl(v)) {
         validation.issues.push({
           message: `Invalid URL format for property: ${prop}`,
-          docs: rule.docs,
-          property: prop,
-          type: 'format'
+          docs: rule.docs, property: prop, type: 'format'
         });
-      } else if (rule.type === 'number' && isNaN(Number(value))) {
+      }
+    }
+    if (rule.type === 'number') {
+      const v = Array.isArray(value) ? value[0] : value;
+      if (isNaN(Number(v))) {
         validation.issues.push({
           message: `Invalid number format for property: ${prop}`,
-          docs: rule.docs,
-          property: prop,
-          type: 'format'
+          docs: rule.docs, property: prop, type: 'format'
         });
-      } else if (rule.format === 'date' && !isValidDate(value)) {
+      }
+    }
+    if (rule.format === 'date') {
+      const v = Array.isArray(value) ? value[0] : value;
+      if (!isValidDate(v)) {
         validation.issues.push({
           message: `Invalid date format for property: ${prop}`,
-          docs: rule.docs,
-          property: prop,
-          type: 'format'
+          docs: rule.docs, property: prop, type: 'format'
         });
-      } else if (rule.format === 'time' && !isValidTime(value)) {
+      }
+    }
+    if (rule.format === 'time') {
+      const v = Array.isArray(value) ? value[0] : value;
+      if (!isValidTime(v)) {
         validation.issues.push({
           message: `Invalid time format for property: ${prop}`,
-          docs: rule.docs,
-          property: prop,
-          type: 'format'
+          docs: rule.docs, property: prop, type: 'format'
         });
       }
     }
   });
 
-  // Calculate score
-  validation.score = requiredScore + recommendedScore;
+  validation.score = reqScore + recScore;
   validation.maxScore = (rules.required.length * 25) + (rules.recommended.length * 15);
-
   return validation;
 }
 
-// Validate URL format
-function isValidUrl(value) {
-  try {
-    new URL(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Validate time format (HH:MM or ISO time)
-function isValidTime(value) {
-  const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-  return timeRegex.test(value) || /^\d{2}:\d{2}:\d{2}$/.test(value);
-}
-
-// Check if schema matches target schemas
 function matchesTargetSchemas(schemaType) {
-  return TARGET_SCHEMAS.some(target => {
-    return schemaType.toLowerCase().includes(target.toLowerCase()) ||
-           target.toLowerCase().includes(schemaType.toLowerCase());
-  });
+  const t = String(schemaType || '');
+  return TARGET_SCHEMAS.some(target =>
+    t.toLowerCase().includes(target.toLowerCase()) ||
+    target.toLowerCase().includes(t.toLowerCase())
+  );
 }
 
-// Analyze robots.txt file
+// -------------------------------------
+// Robots, LLMs, AI, OpenGraph, Sitemap
+// -------------------------------------
 async function analyzeRobotsTxt(url) {
   const analysis = {
-    exists: false,
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
-    aiCrawlers: [],
-    sitemapFound: false,
-    sitemapUrl: null,
-    userAgents: []
+    exists: false, score: 0, maxScore: 100,
+    issues: [], recommendations: [],
+    aiCrawlers: [], sitemapFound: false, sitemapUrl: null, userAgents: []
   };
 
   try {
     const robotsUrl = new URL('/robots.txt', url).href;
-    const response = await axios.get(robotsUrl, {
-      timeout: 5000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-
+    const res = await axios.get(robotsUrl, { timeout: 6000, headers: { 'User-Agent': 'Mozilla/5.0' } });
     analysis.exists = true;
-    analysis.content = response.data;
-    analysis.lastModified = response.headers['last-modified'] || null;
-
-    // Parse robots.txt content
-    const lines = response.data.split('\n');
-    let currentUserAgent = null;
+    const content = String(res.data || '');
+    const lines = content.split('\n');
+    let currentUA = null;
 
     lines.forEach(line => {
       const trimmed = line.trim();
-
-      // Skip comments and empty lines
       if (!trimmed || trimmed.startsWith('#')) return;
 
-      // User-agent declaration
       if (trimmed.toLowerCase().startsWith('user-agent:')) {
-        currentUserAgent = trimmed.substring(11).trim().toLowerCase();
-        analysis.userAgents.push(currentUserAgent);
+        currentUA = trimmed.substring(11).trim().toLowerCase();
+        analysis.userAgents.push(currentUA);
+        if (currentUA.includes('gptbot') || currentUA.includes('chatgpt')) analysis.aiCrawlers.push('GPTBot');
+        if (currentUA.includes('claude')) analysis.aiCrawlers.push('ClaudeBot');
+        if (currentUA.includes('perplexity')) analysis.aiCrawlers.push('PerplexityBot');
       }
-
-      // AI crawler detection
-      if (currentUserAgent) {
-        if (currentUserAgent.includes('gptbot') || currentUserAgent.includes('chatgpt')) {
-          analysis.aiCrawlers.push('GPTBot');
-        } else if (currentUserAgent.includes('claude')) {
-          analysis.aiCrawlers.push('ClaudeBot');
-        } else if (currentUserAgent.includes('perplexity')) {
-          analysis.aiCrawlers.push('PerplexityBot');
-        }
-      }
-
-      // Sitemap declaration
       if (trimmed.toLowerCase().startsWith('sitemap:')) {
         analysis.sitemapFound = true;
         analysis.sitemapUrl = trimmed.substring(8).trim();
       }
     });
 
-    // Remove duplicates from AI crawlers
     analysis.aiCrawlers = [...new Set(analysis.aiCrawlers)];
-
-    // Scoring logic
     if (analysis.exists) analysis.score += 30;
+    if (analysis.aiCrawlers.length > 0) analysis.score += 25; else analysis.recommendations.push('Consider adding AI crawler permissions (GPTBot, ClaudeBot, Perplexity).');
+    if (analysis.sitemapFound) analysis.score += 20; else analysis.issues.push('Missing sitemap declaration in robots.txt');
+    if (analysis.userAgents.length > 1) analysis.score += 15;
+    if (!/crawl-delay/i.test(content)) analysis.recommendations.push('Consider adding crawl-delay to protect performance.');
+    if (/Disallow:\s*\/\s*$/i.test(content)) analysis.recommendations.push('robots.txt blocks everything—ensure that’s intended.');
 
-    if (analysis.aiCrawlers.length > 0) {
-      analysis.score += 25; // AI crawler management
-    } else {
-      analysis.recommendations.push('Consider adding AI crawler permissions (GPTBot, ClaudeBot, etc.)');
-    }
-
-    if (analysis.sitemapFound) {
-      analysis.score += 20;
-    } else {
-      analysis.issues.push('Missing sitemap declaration in robots.txt');
-    }
-
-    if (analysis.userAgents.length > 1) {
-      analysis.score += 15; // Multiple user-agent support
-    }
-
-    // Check for common issues
-    if (response.data.toLowerCase().includes('disallow: /')) {
-      analysis.recommendations.push('Consider allowing some content for better AI and search engine access');
-    }
-
-    if (!response.data.toLowerCase().includes('crawl-delay')) {
-      analysis.recommendations.push('Consider adding crawl-delay for better server performance');
-    }
-
-  } catch (error) {
-    analysis.issues.push('robots.txt file not accessible or not found');
-    if (error.response && error.response.status === 404) {
-      analysis.recommendations.push('Create a robots.txt file at your website root');
-    }
+  } catch (e) {
+    analysis.issues.push('robots.txt not found or not accessible');
+    analysis.recommendations.push('Create a robots.txt at site root with sitemap and bot directives.');
   }
-
   return analysis;
 }
 
-// Analyze LLM.txt file
 async function analyzeLlmTxt(url) {
-  const analysis = {
-    exists: false,
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
-    sections: [],
-    aiGuidelines: [],
-    businessInfo: null,
-    contentQuality: 'none'
-  };
-
+  const analysis = { exists: false, score: 0, maxScore: 100, issues: [], recommendations: [], sections: [], aiGuidelines: [], businessInfo: false, hasContact: false, contentQuality: 'none' };
   try {
-    const llmUrl = new URL('/llms.txt', url).href;
-    const response = await axios.get(llmUrl, {
-      timeout: 5000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-
+    const llmsUrl = new URL('/llms.txt', url).href;
+    const res = await axios.get(llmsUrl, { timeout: 6000, headers: { 'User-Agent': 'Mozilla/5.0' } });
     analysis.exists = true;
-    analysis.content = response.data;
-    analysis.lastModified = response.headers['last-modified'] || null;
-
-    const content = response.data;
+    const content = String(res.data || '');
     const lines = content.split('\n');
+    let hasGuidelines = false, hasBusiness = false, hasContact = false;
 
-    // Analyze content structure
-    let currentSection = null;
-    let hasBusinessInfo = false;
-    let hasGuidelines = false;
-    let hasContact = false;
-
-    lines.forEach(line => {
-      const trimmed = line.trim();
-
-      // Section headers
-      if (trimmed.startsWith('# ')) {
-        currentSection = trimmed.substring(2).trim();
-        analysis.sections.push(currentSection);
-        if (currentSection.toLowerCase().includes('about') || currentSection.toLowerCase().includes('business')) {
-          hasBusinessInfo = true;
-        }
+    lines.forEach(l => {
+      const t = l.trim();
+      if (!t) return;
+      if (t.startsWith('# ')) {
+        const section = t.substring(2).trim();
+        analysis.sections.push(section);
+        if (/about|business|company/i.test(section)) hasBusiness = true;
       }
-
-      // AI guidelines
-      if (trimmed.toLowerCase().includes('guidelines for ai') || trimmed.toLowerCase().includes('ai systems')) {
-        hasGuidelines = true;
-      }
-
-      // Contact information
-      if (trimmed.toLowerCase().includes('contact') || trimmed.toLowerCase().includes('email') || trimmed.toLowerCase().includes('phone')) {
-        hasContact = true;
-      }
+      if (/guidelines|ai systems|usage/i.test(t)) hasGuidelines = true;
+      if (/contact|email|phone/i.test(t)) hasContact = true;
     });
 
-    analysis.businessInfo = hasBusinessInfo;
-    analysis.aiGuidelines = hasGuidelines ? ['AI usage guidelines provided'] : [];
+    analysis.businessInfo = hasBusiness;
     analysis.hasContact = hasContact;
+    if (hasGuidelines) analysis.aiGuidelines.push('AI usage guidelines present');
 
-    // Content quality assessment
-    if (content.length > 500) {
-      analysis.contentQuality = 'comprehensive';
-      analysis.score += 40;
-    } else if (content.length > 200) {
-      analysis.contentQuality = 'good';
-      analysis.score += 25;
-    } else if (content.length > 50) {
-      analysis.contentQuality = 'basic';
-      analysis.score += 10;
-    }
+    const len = content.length;
+    if (len > 500) { analysis.contentQuality = 'comprehensive'; analysis.score += 40; }
+    else if (len > 200) { analysis.contentQuality = 'good'; analysis.score += 25; }
+    else if (len > 50) { analysis.contentQuality = 'basic'; analysis.score += 10; }
 
-    // Structure scoring
-    if (analysis.sections.length > 0) {
-      analysis.score += 20; // Well-structured content
-    } else {
-      analysis.issues.push('Consider adding section headers for better organization');
-    }
+    if (analysis.sections.length) analysis.score += 20; else analysis.issues.push('Add headers/sections to llms.txt');
+    if (hasBusiness) analysis.score += 20; else analysis.recommendations.push('Include a business overview section.');
+    if (hasGuidelines) analysis.score += 15; else analysis.recommendations.push('Add AI usage guidelines section.');
+    if (hasContact) analysis.score += 5; else analysis.recommendations.push('Consider contact details for AI systems.');
 
-    if (hasBusinessInfo) {
-      analysis.score += 20;
-    } else {
-      analysis.recommendations.push('Add business description and overview section');
-    }
-
-    if (hasGuidelines) {
-      analysis.score += 15;
-    } else {
-      analysis.recommendations.push('Add AI usage guidelines section');
-    }
-
-    if (hasContact) {
-      analysis.score += 5;
-    } else {
-      analysis.recommendations.push('Consider adding contact information for AI systems');
-    }
-
-    // Check for markdown formatting
-    if (content.includes('#') || content.includes('**') || content.includes('*') || content.includes('-')) {
-      analysis.score += 10; // Proper markdown formatting
-    } else {
-      analysis.recommendations.push('Use markdown formatting for better readability');
-    }
-
-  } catch (error) {
-    analysis.issues.push('llms.txt file not accessible or not found');
-    if (error.response && error.response.status === 404) {
-      analysis.recommendations.push('Create an llms.txt file to improve AI search visibility');
-      analysis.recommendations.push('Include business description, services, and AI guidelines');
-    }
+  } catch {
+    analysis.issues.push('llms.txt not found or not accessible');
+    analysis.recommendations.push('Create an llms.txt that describes your business and AI usage guidelines.');
   }
-
   return analysis;
 }
 
-// Analyze OpenGraph meta tags
-async function analyzeOpenGraph(url) {
-  const analysis = {
-    exists: false,
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
-    tags: {},
-    hotelSpecific: {},
-    socialCoverage: []
-  };
-
-  try {
-    const response = await axios.get(url, {
-      timeout: 5000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-
-    analysis.exists = true;
-    analysis.content = response.data;
-    analysis.lastModified = response.headers['last-modified'] || null;
-
-    const $ = cheerio.load(response.data);
-
-    // Extract OpenGraph meta tags
-    const ogTags = {};
-    $('meta[property^="og:"]').each((i, elem) => {
-      const property = $(elem).attr('property');
-      const content = $(elem).attr('content');
-      if (property && content) {
-        ogTags[property] = content;
-      }
-    });
-
-    // Extract Twitter Card tags
-    const twitterTags = {};
-    $('meta[name^="twitter:"]').each((i, elem) => {
-      const name = $(elem).attr('name');
-      const content = $(elem).attr('content');
-      if (name && content) {
-        twitterTags[name] = content;
-      }
-    });
-
-    analysis.tags = ogTags;
-    analysis.twitterTags = twitterTags;
-
-    // Check for social platform coverage
-    if (Object.keys(ogTags).length > 0) analysis.socialCoverage.push('Facebook');
-    if (Object.keys(twitterTags).length > 0) analysis.socialCoverage.push('Twitter');
-
-    // Basic OpenGraph scoring
-    const requiredOg = ['og:title', 'og:description', 'og:image', 'og:url'];
-    let requiredCount = 0;
-
-    requiredOg.forEach(prop => {
-      if (ogTags[prop]) {
-        requiredCount++;
-        analysis.score += 15; // 15 points per required property
-      } else {
-        analysis.issues.push(`Missing OpenGraph property: ${prop}`);
-      }
-    });
-
-    // Check content quality
-    if (ogTags['og:title'] && ogTags['og:title'].length > 10) {
-      analysis.score += 10; // Good title length
-    } else if (ogTags['og:title']) {
-      analysis.recommendations.push('Consider longer, more descriptive OpenGraph title');
-    }
-
-    if (ogTags['og:description'] && ogTags['og:description'].length > 50) {
-      analysis.score += 10; // Good description length
-    } else if (ogTags['og:description']) {
-      analysis.recommendations.push('Consider longer OpenGraph description (50+ characters)');
-    }
-
-    // Check image optimization
-    if (ogTags['og:image']) {
-      analysis.score += 10;
-      if (ogTags['og:image:width'] && ogTags['og:image:height']) {
-        analysis.score += 5; // Image dimensions specified
-      } else {
-        analysis.recommendations.push('Add og:image:width and og:image:height for better display');
-      }
-    }
-
-    // Hotel-specific properties
-    const hotelProps = ['hotel:amenity', 'hotel:checkin_time', 'hotel:checkout_time', 'hotel:price_range'];
-    hotelProps.forEach(prop => {
-      if (ogTags[prop]) {
-        analysis.hotelSpecific[prop] = ogTags[prop];
-        analysis.score += 5; // 5 points per hotel-specific property
-      }
-    });
-
-    // Twitter Cards analysis
-    if (twitterTags['twitter:card']) {
-      analysis.score += 10;
-      analysis.socialCoverage.push('Twitter');
-
-      if (twitterTags['twitter:image'] && twitterTags['twitter:image'] !== ogTags['og:image']) {
-        analysis.score += 5; // Different images for different platforms
-      }
-    }
-
-    // Check for og:type
-    if (ogTags['og:type']) {
-      analysis.score += 5;
-      if (ogTags['og:type'] === 'hotel') {
-        analysis.score += 5; // Proper hotel type
-      }
-    } else {
-      analysis.issues.push('Missing og:type property');
-    }
-
-  } catch (error) {
-    analysis.issues.push('Unable to access website for OpenGraph analysis');
-    analysis.recommendations.push('Ensure website is accessible and not blocking requests');
-  }
-
-  return analysis;
-}
-
-// Analyze AI.txt file
 async function analyzeAiTxt(url) {
-  const analysis = {
-    exists: false,
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
-    aiCrawlers: [],
-    usageGuidelines: [],
-    attributionRequired: false,
-    lastModified: null
-  };
-
+  const analysis = { exists: false, score: 0, maxScore: 100, issues: [], recommendations: [], aiCrawlers: [], usageGuidelines: [], attributionRequired: false };
   try {
     const aiUrl = new URL('/ai.txt', url).href;
-    const response = await axios.get(aiUrl, {
-      timeout: 5000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-
+    const res = await axios.get(aiUrl, { timeout: 6000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const lines = String(res.data || '').split('\n');
     analysis.exists = true;
-    analysis.content = response.data;
-    analysis.lastModified = response.headers['last-modified'] || null;
 
-    const content = response.data;
-    const lines = content.split('\n');
-
-    // Analyze AI.txt content
-    let hasPermissions = false;
-    let hasGuidelines = false;
-    let hasAttribution = false;
-
-    lines.forEach(line => {
-      const trimmed = line.trim();
-
-      // Skip comments and empty lines
-      if (!trimmed || trimmed.startsWith('#')) return;
-
-      // AI crawler permissions
-      if (trimmed.toLowerCase().includes('user-agent:')) {
-        const userAgent = trimmed.substring(11).trim().toLowerCase();
-        if (userAgent.includes('gptbot') || userAgent.includes('claude') || userAgent.includes('perplexity')) {
-          analysis.aiCrawlers.push(userAgent);
+    let hasPermissions = false, hasGuidelines = false, hasAttr = false;
+    lines.forEach(l => {
+      const t = l.trim();
+      if (!t || t.startsWith('#')) return;
+      if (/user-agent:/i.test(t)) {
+        const ua = t.split(':')[1].trim().toLowerCase();
+        if (ua.includes('gpt') || ua.includes('claude') || ua.includes('perplexity')) {
+          analysis.aiCrawlers.push(ua);
           hasPermissions = true;
         }
       }
-
-      // Usage guidelines
-      if (trimmed.toLowerCase().includes('guidelines') || trimmed.toLowerCase().includes('usage')) {
-        hasGuidelines = true;
-        analysis.usageGuidelines.push(trimmed);
-      }
-
-      // Attribution requirements
-      if (trimmed.toLowerCase().includes('attribution') || trimmed.toLowerCase().includes('citation') || trimmed.toLowerCase().includes('credit')) {
-        hasAttribution = true;
-        analysis.attributionRequired = true;
-      }
+      if (/guidelines|usage/i.test(t)) { hasGuidelines = true; analysis.usageGuidelines.push(t); }
+      if (/attribution|citation|credit/i.test(t)) { hasAttr = true; analysis.attributionRequired = true; }
     });
-
-    // Remove duplicates
     analysis.aiCrawlers = [...new Set(analysis.aiCrawlers)];
-
-    // Scoring logic
     if (analysis.exists) analysis.score += 30;
+    if (hasPermissions) analysis.score += 25; else analysis.recommendations.push('Add AI crawler permissions for GPT/Claude/Perplexity.');
+    if (hasGuidelines) analysis.score += 20; else analysis.issues.push('Missing AI usage guidelines.');
+    if (hasAttr) analysis.score += 15; else analysis.recommendations.push('Consider attribution/citation guidance.');
+    if (analysis.aiCrawlers.length > 0) analysis.score += 10;
 
-    if (hasPermissions) {
-      analysis.score += 25; // AI crawler permissions
-    } else {
-      analysis.recommendations.push('Consider adding AI crawler permissions (GPTBot, ClaudeBot, etc.)');
-    }
-
-    if (hasGuidelines) {
-      analysis.score += 20;
-    } else {
-      analysis.issues.push('Missing AI usage guidelines');
-    }
-
-    if (hasAttribution) {
-      analysis.score += 15;
-    } else {
-      analysis.recommendations.push('Consider adding attribution requirements for content usage');
-    }
-
-    if (analysis.aiCrawlers.length > 0) {
-      analysis.score += 10; // Multiple AI crawler support
-    }
-
-  } catch (error) {
-    analysis.issues.push('ai.txt file not accessible or not found');
-    if (error.response && error.response.status === 404) {
-      analysis.recommendations.push('Create an ai.txt file to control AI crawler access');
-      analysis.recommendations.push('Include AI bot permissions and usage guidelines');
-    }
+  } catch {
+    analysis.issues.push('ai.txt not found or not accessible');
+    analysis.recommendations.push('Create an ai.txt file to define AI crawler permissions and expectations.');
   }
-
   return analysis;
 }
 
-// Analyze sitemap.xml file
-async function analyzeSitemap(url) {
-  const analysis = {
-    exists: false,
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
-    urlCount: 0,
-    lastModified: null,
-    priorities: [],
-    changeFreqs: [],
-    hasImages: false,
-    xmlValid: false
-  };
+async function analyzeOpenGraph(url) {
+  const analysis = { exists: false, score: 0, maxScore: 100, issues: [], recommendations: [], tags: {}, twitterTags: {}, socialCoverage: [], hotelSpecific: {} };
+  try {
+    const res = await axios.get(url, { timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const $ = cheerio.load(res.data);
+    analysis.exists = true;
 
+    $('meta[property^="og:"]').each((i, el) => {
+      const p = $(el).attr('property');
+      const c = $(el).attr('content');
+      if (p && c) analysis.tags[p] = c;
+    });
+    $('meta[name^="twitter:"]').each((i, el) => {
+      const n = $(el).attr('name');
+      const c = $(el).attr('content');
+      if (n && c) analysis.twitterTags[n] = c;
+    });
+
+    if (Object.keys(analysis.tags).length > 0) analysis.socialCoverage.push('Facebook');
+    if (Object.keys(analysis.twitterTags).length > 0) analysis.socialCoverage.push('Twitter/X');
+
+    const requiredOg = ['og:title', 'og:description', 'og:image', 'og:url'];
+    requiredOg.forEach(prop => {
+      if (analysis.tags[prop]) analysis.score += 15;
+      else analysis.issues.push(`Missing OpenGraph property: ${prop}`);
+    });
+
+    if (analysis.tags['og:title'] && analysis.tags['og:title'].length > 10) analysis.score += 10;
+    else if (analysis.tags['og:title']) analysis.recommendations.push('Consider a longer, more descriptive og:title.');
+
+    if (analysis.tags['og:description'] && analysis.tags['og:description'].length > 50) analysis.score += 10;
+    else if (analysis.tags['og:description']) analysis.recommendations.push('Use a longer og:description (50+ chars).');
+
+    if (analysis.tags['og:image']) {
+      analysis.score += 10;
+      if (analysis.tags['og:image:width'] && analysis.tags['og:image:height']) analysis.score += 5;
+      else analysis.recommendations.push('Add og:image:width and og:image:height.');
+      if (!isAbsolute(analysis.tags['og:image'])) analysis.recommendations.push('Use absolute URL for og:image.');
+    }
+
+    if (analysis.tags['og:type']) {
+      analysis.score += 5;
+      if (analysis.tags['og:type'] === 'hotel') analysis.score += 5;
+    } else {
+      analysis.issues.push('Missing og:type');
+    }
+
+    // hotel-specific
+    ['hotel:amenity', 'hotel:checkin_time', 'hotel:checkout_time', 'hotel:price_range'].forEach(prop => {
+      if (analysis.tags[prop]) { analysis.hotelSpecific[prop] = analysis.tags[prop]; analysis.score += 5; }
+    });
+
+  } catch {
+    analysis.issues.push('Unable to fetch page for OpenGraph analysis.');
+  }
+  return analysis;
+}
+
+async function analyzeSitemap(url) {
+  const analysis = { exists: false, score: 0, maxScore: 100, issues: [], recommendations: [], urlCount: 0, xmlValid: false, priorities: [], changeFreqs: [], hasImages: false };
   try {
     const sitemapUrl = new URL('/sitemap.xml', url).href;
-    const response = await axios.get(sitemapUrl, {
-      timeout: 5000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-
+    const res = await axios.get(sitemapUrl, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const $ = cheerio.load(res.data, { xmlMode: true });
     analysis.exists = true;
-    analysis.content = response.data;
-    analysis.lastModified = response.headers['last-modified'] || null;
 
-    const $ = cheerio.load(response.data, { xmlMode: true });
+    if ($('urlset').length > 0 || $('sitemapindex').length > 0) { analysis.xmlValid = true; analysis.score += 20; }
+    else analysis.issues.push('Invalid XML: missing urlset/sitemapindex');
 
-    // Check XML validity
-    if ($('urlset').length > 0 || $('sitemapindex').length > 0) {
-      analysis.xmlValid = true;
-      analysis.score += 20;
-    } else {
-      analysis.issues.push('Invalid XML structure - missing urlset or sitemapindex');
-      analysis.xmlValid = false;
-    }
-
-    // Analyze URLs
     const urls = $('url');
     analysis.urlCount = urls.length;
-
     if (urls.length > 0) {
-      analysis.score += 25; // Has URLs
-
-      urls.each((i, elem) => {
-        const $elem = $(elem);
-        const loc = $elem.find('loc').text();
-        const priority = $elem.find('priority').text();
-        const changefreq = $elem.find('changefreq').text();
-        const lastmod = $elem.find('lastmod').text();
-
-        // Check for homepage
-        if (loc === url + '/' || loc === url) {
-          if (priority === '1.0') {
-            analysis.score += 5; // Homepage properly prioritized
-          }
-        }
-
-        if (priority) {
-          analysis.priorities.push(priority);
-        }
-
-        if (changefreq) {
-          analysis.changeFreqs.push(changefreq);
-        }
-
-        // Check for lastmod dates
-        if (lastmod && /^\d{4}-\d{2}-\d{2}/.test(lastmod)) {
-          analysis.score += 2; // Proper date format (max 5 points)
-        }
+      analysis.score += 25;
+      urls.each((i, el) => {
+        const $el = $(el);
+        const priority = $el.find('priority').text();
+        const changefreq = $el.find('changefreq').text();
+        const lastmod = $el.find('lastmod').text();
+        if (priority) analysis.priorities.push(priority);
+        if (changefreq) analysis.changeFreqs.push(changefreq);
+        if (lastmod && /^\d{4}-\d{2}-\d{2}/.test(lastmod)) analysis.score += 2;
       });
-
-      // Check image sitemaps
-      if ($('image\\:image').length > 0 || $('image').length > 0) {
-        analysis.hasImages = true;
-        analysis.score += 10;
+      if ($('image\\:image').length > 0 || $('image').length > 0) { analysis.hasImages = true; analysis.score += 10; }
+      const ps = analysis.priorities.map(p => parseFloat(p)).filter(n => !isNaN(n));
+      if (ps.length) {
+        const mx = Math.max(...ps), mn = Math.min(...ps);
+        if (mx === 1.0 && mn >= 0.1) analysis.score += 10;
       }
-
-      // Check for proper priority distribution
-      const priorities = analysis.priorities.map(p => parseFloat(p)).filter(p => !isNaN(p));
-      if (priorities.length > 0) {
-        const maxPriority = Math.max(...priorities);
-        const minPriority = Math.min(...priorities);
-        if (maxPriority === 1.0 && minPriority >= 0.1) {
-          analysis.score += 10; // Good priority range
-        }
-      }
-
-      // Check change frequency variety
-      if (analysis.changeFreqs.length > 2) {
-        analysis.score += 5; // Multiple change frequencies used
-      }
-
+      if (analysis.changeFreqs.length > 2) analysis.score += 5;
     } else {
-      analysis.issues.push('No URLs found in sitemap');
+      analysis.issues.push('No URLs found in sitemap.');
     }
+    if (urls.length < 10) analysis.recommendations.push('Add more important URLs to sitemap for better coverage.');
+    if (analysis.priorities.length === 0) analysis.recommendations.push('Include <priority> to guide crawlers.');
+    if (analysis.changeFreqs.length === 0) analysis.recommendations.push('Include <changefreq> where applicable.');
 
-    // Check for sitemap index
-    const sitemapIndex = $('sitemapindex');
-    if (sitemapIndex.length > 0) {
-      analysis.score += 15; // Sitemap index for large sites
-      analysis.urlCount = sitemapIndex.find('sitemap').length;
-    }
-
-    // Recommendations
-    if (urls.length < 10) {
-      analysis.recommendations.push('Consider adding more URLs to sitemap for better indexing');
-    }
-
-    if (analysis.priorities.length === 0) {
-      analysis.recommendations.push('Add priority values to help search engines understand page importance');
-    }
-
-    if (analysis.changeFreqs.length === 0) {
-      analysis.recommendations.push('Add changefreq values to indicate content update frequency');
-    }
-
-    if (!analysis.hasImages) {
-      analysis.recommendations.push('Consider adding image sitemap for better image indexing');
-    }
-
-  } catch (error) {
-    analysis.issues.push('sitemap.xml file not accessible or not found');
-    if (error.response && error.response.status === 404) {
-      analysis.recommendations.push('Create a sitemap.xml file at your website root');
-      analysis.recommendations.push('Include all important pages with proper priorities');
-    }
+  } catch {
+    analysis.issues.push('sitemap.xml not found or not accessible');
+    analysis.recommendations.push('Create a sitemap.xml at site root.');
   }
-
   return analysis;
 }
 
-// Analyze enhanced FAQ/HowTo schema for AEO optimization
-function analyzeFaqHowToSchema(jsonLd, microdata, rdfa) {
+// -------------------------------------
+// AEO / Content / Breadcrumb / Performance
+// -------------------------------------
+function analyzeFaqHowToSchema(allSchemas) {
   const analysis = {
-    exists: false,
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
-    faqQuality: 0,
-    howToQuality: 0,
-    totalQuestions: 0,
-    totalSteps: 0,
-    featuredSnippetPotential: 'low'
+    exists: false, score: 0, maxScore: 100,
+    issues: [], recommendations: [],
+    faqQuality: 0, howToQuality: 0, totalQuestions: 0, totalSteps: 0,
+    featuredSnippetPotential: 'low',
+    faqPages: []
   };
 
-  // Find FAQ and HowTo schemas
-  const faqSchemas = [];
-  const howToSchemas = [];
-
-  // Check JSON-LD
-  jsonLd.forEach((schema, index) => {
-    const schemaType = schema['@type'] || schema.type;
-    if (schemaType === 'FAQPage') {
-      faqSchemas.push({ schema, index, type: 'JSON-LD' });
-    } else if (schemaType === 'HowTo') {
-      howToSchemas.push({ schema, index, type: 'JSON-LD' });
-    }
-  });
-
-  // Check Microdata
-  microdata.forEach((schema, index) => {
-    if (schema.type === 'FAQPage') {
-      faqSchemas.push({ schema, index, type: 'Microdata' });
-    } else if (schema.type === 'HowTo') {
-      howToSchemas.push({ schema, index, type: 'Microdata' });
-    }
-  });
-
-  // Check RDFa
-  rdfa.forEach((schema, index) => {
-    if (schema.type === 'FAQPage') {
-      faqSchemas.push({ schema, index, type: 'RDFa' });
-    } else if (schema.type === 'HowTo') {
-      howToSchemas.push({ schema, index, type: 'RDFa' });
-    }
-  });
+  const faqSchemas = allSchemas.filter(s => normalizeType(s['@type']).toLowerCase().includes('faqpage'));
+  const howToSchemas = allSchemas.filter(s => normalizeType(s['@type']).toLowerCase().includes('howto'));
 
   analysis.exists = faqSchemas.length > 0 || howToSchemas.length > 0;
 
-  if (!analysis.exists) {
-    analysis.issues.push('No FAQ or HowTo schema found');
-    analysis.recommendations.push('Add FAQPage schema for common hotel questions');
-    analysis.recommendations.push('Consider HowTo schema for booking processes or amenities');
-    return analysis;
-  }
-
-  // Analyze FAQ schemas
-  faqSchemas.forEach(faq => {
-    const schema = faq.schema;
-    const mainEntity = schema.mainEntity || schema.properties?.mainEntity;
-
-    if (mainEntity && Array.isArray(mainEntity)) {
+  // FAQ scoring
+  faqSchemas.forEach(item => {
+    const mainEntity = item.mainEntity;
+    if (Array.isArray(mainEntity)) {
       analysis.totalQuestions += mainEntity.length;
-
-      mainEntity.forEach(question => {
-        // Check question quality
-        if (question.name && question.name.length > 20) {
-          analysis.faqQuality += 10; // Good question length
-        } else if (question.name) {
-          analysis.recommendations.push('Use more descriptive question text (20+ characters)');
-        }
-
-        // Check answer quality
-        if (question.acceptedAnswer && question.acceptedAnswer.text) {
-          const answerText = question.acceptedAnswer.text;
-          if (answerText.length > 100) {
-            analysis.faqQuality += 15; // Comprehensive answer
-          } else if (answerText.length > 50) {
-            analysis.faqQuality += 10; // Good answer length
-          } else {
-            analysis.recommendations.push('Provide more detailed answers (50+ characters)');
-          }
+      mainEntity.forEach(q => {
+        const qname = q?.name || q?.headline || '';
+        const ans = q?.acceptedAnswer?.text || '';
+        if (qname && qname.length > 20) analysis.faqQuality += 10;
+        if (ans) {
+          const len = ans.replace(/<[^>]*>/g, '').trim().split(/\s+/).length;
+          if (len > 100) analysis.faqQuality += 15;
+          else if (len > 50) analysis.faqQuality += 10;
+          else analysis.recommendations.push('Provide more detailed FAQ answers (50+ words).');
         } else {
-          analysis.issues.push('Missing answer text in FAQ');
+          analysis.issues.push('FAQ question missing acceptedAnswer.text');
         }
       });
+    } else {
+      analysis.issues.push('FAQPage without mainEntity array.');
     }
   });
 
-  // Analyze HowTo schemas
-  howToSchemas.forEach(howTo => {
-    const schema = howTo.schema;
-    const steps = schema.step || schema.properties?.step;
-
-    if (steps && Array.isArray(steps)) {
+  // HowTo scoring
+  howToSchemas.forEach(item => {
+    const steps = item.step;
+    if (Array.isArray(steps)) {
       analysis.totalSteps += steps.length;
-
-      steps.forEach((step, index) => {
-        // Check step completeness
-        if (step.text || step.description) {
-          analysis.howToQuality += 10; // Step has content
-
-          if ((step.text || step.description).length > 30) {
-            analysis.howToQuality += 5; // Detailed step
-          }
+      steps.forEach(st => {
+        const txt = st?.text || st?.description || '';
+        if (txt) {
+          const len = String(txt).replace(/<[^>]*>/g, '').trim().length;
+          analysis.howToQuality += (len > 30 ? 15 : 8);
         } else {
-          analysis.issues.push(`HowTo step ${index + 1} missing content`);
-        }
-
-        // Check for required HowTo properties
-        if (schema.name && schema.description) {
-          analysis.howToQuality += 10; // Proper HowTo structure
+          analysis.issues.push('HowTo step missing text/description');
         }
       });
+      if (item.name && item.description) analysis.howToQuality += 10;
+    } else {
+      analysis.issues.push('HowTo missing step array.');
     }
   });
 
-  // Calculate overall score
+  // Overall score
   const totalItems = analysis.totalQuestions + analysis.totalSteps;
   if (totalItems > 0) {
-    analysis.score += 30; // Has FAQ/HowTo content
-
-    if (analysis.faqQuality > 50 || analysis.howToQuality > 50) {
-      analysis.score += 25; // Good quality content
-    }
-
-    if (totalItems > 5) {
-      analysis.score += 20; // Comprehensive coverage
-    } else if (totalItems > 2) {
-      analysis.score += 10; // Basic coverage
-    }
-
-    if (analysis.totalQuestions > 0) {
-      analysis.score += 15; // FAQ content
-    }
-
-    if (analysis.totalSteps > 0) {
-      analysis.score += 10; // HowTo content
-    }
+    analysis.score += 30; // has content
+    if (analysis.faqQuality > 50 || analysis.howToQuality > 50) analysis.score += 25;
+    if (totalItems > 5) analysis.score += 20;
+    else if (totalItems > 2) analysis.score += 10;
+    if (analysis.totalQuestions > 0) analysis.score += 15;
+    if (analysis.totalSteps > 0) analysis.score += 10;
+  } else {
+    analysis.recommendations.push('Add FAQ or HowTo schema with multiple entries.');
   }
 
   // Featured snippet potential
-  if (analysis.faqQuality > 70 && analysis.totalQuestions > 3) {
-    analysis.featuredSnippetPotential = 'high';
-    analysis.score += 15;
-  } else if (analysis.faqQuality > 40 && analysis.totalQuestions > 1) {
-    analysis.featuredSnippetPotential = 'medium';
-    analysis.score += 5;
-  }
+  if (analysis.faqQuality > 70 && analysis.totalQuestions > 3) analysis.featuredSnippetPotential = 'high';
+  else if (analysis.faqQuality > 40 && analysis.totalQuestions > 1) analysis.featuredSnippetPotential = 'medium';
 
-  // Recommendations
-  if (analysis.totalQuestions < 3) {
-    analysis.recommendations.push('Add more FAQ questions (aim for 3-5+ for better AEO)');
-  }
-
-  if (analysis.totalSteps === 0) {
-    analysis.recommendations.push('Consider HowTo schema for booking processes or amenities');
-  }
-
-  if (analysis.featuredSnippetPotential === 'low') {
-    analysis.recommendations.push('Improve question clarity and answer detail for featured snippet potential');
-  }
+  if (faqSchemas.length === 0) analysis.recommendations.push('Add FAQPage schema for common questions.');
 
   return analysis;
 }
 
-// Analyze breadcrumb navigation
-function analyzeBreadcrumbs($) {
-  const analysis = {
-    exists: false,
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
-    breadcrumbType: null,
-    depth: 0,
-    structured: false,
-    accurate: false
-  };
+function analyzeBreadcrumbs($, pageUrl) {
+  const analysis = { exists: false, score: 0, maxScore: 100, issues: [], recommendations: [], breadcrumbType: null, depth: 0, structured: false, accurate: false };
 
-  // Check for JSON-LD breadcrumbs
+  // JSON-LD breadcrumbs
   let jsonLdBreadcrumbs = null;
-  $('script[type="application/ld+json"]').each((i, elem) => {
+  $('script[type="application/ld+json"]').each((i, el) => {
     try {
-      const content = $(elem).html();
-      if (content) {
-        const parsed = JSON.parse(content);
-        if (parsed['@type'] === 'BreadcrumbList') {
-          jsonLdBreadcrumbs = parsed;
-          analysis.exists = true;
-          analysis.breadcrumbType = 'JSON-LD';
-          analysis.structured = true;
-        }
-      }
-    } catch (error) {
-      // Invalid JSON, continue
-    }
+      const content = cleanJsonLikeString($(el).html() || '');
+      const parsed = JSON.parse(content);
+      const nodes = Array.isArray(parsed) ? parsed : (parsed['@graph'] || [parsed]);
+      nodes.forEach(n => {
+        if (n && n['@type'] === 'BreadcrumbList') jsonLdBreadcrumbs = n;
+      });
+    } catch {}
   });
 
-  // Check for Microdata breadcrumbs
-  const breadcrumbElements = $('[itemtype*="BreadcrumbList"], [itemtype*="breadcrumb"]');
-  if (breadcrumbElements.length > 0) {
+  if (jsonLdBreadcrumbs) {
     analysis.exists = true;
-    analysis.breadcrumbType = 'Microdata';
+    analysis.breadcrumbType = 'JSON-LD';
     analysis.structured = true;
+    const items = jsonLdBreadcrumbs.itemListElement || [];
+    analysis.depth = items.length;
+    if (items.length > 0) analysis.score += 40;
+    if (items.length >= 3) analysis.score += 15;
+    items.forEach((it, idx) => {
+      if (it.position === idx + 1 && it.name && (it.item || it.item?.['@id'])) analysis.score += 5;
+      else analysis.issues.push(`Breadcrumb item ${idx + 1} missing position/name/item`);
+    });
+    analysis.accurate = true; // heuristic; real path compare would be heavier
+    analysis.score += 10;
   }
 
-  // Check for simple HTML breadcrumbs (nav with aria-label)
-  const navBreadcrumbs = $('nav[aria-label*="breadcrumb"], .breadcrumb, [class*="breadcrumb"]');
-  if (navBreadcrumbs.length > 0 && !analysis.exists) {
+  // Microdata/HTML breadcrumbs fallback
+  const micro = $('[itemtype*="BreadcrumbList"], nav[aria-label*="breadcrumb"], .breadcrumb, [class*="breadcrumb"]');
+  if (!analysis.exists && micro.length > 0) {
     analysis.exists = true;
-    analysis.breadcrumbType = 'HTML';
+    analysis.breadcrumbType = 'Microdata/HTML';
+    analysis.depth = micro.find('li,[itemprop="itemListElement"]').length;
+    analysis.score += 35;
+    if (analysis.depth >= 3) analysis.score += 10;
   }
 
   if (!analysis.exists) {
-    analysis.issues.push('No breadcrumb navigation found');
-    analysis.recommendations.push('Add breadcrumb navigation for better site structure');
-    analysis.recommendations.push('Use JSON-LD BreadcrumbList for best SEO results');
-    return analysis;
+    analysis.issues.push('No breadcrumb navigation found.');
+    analysis.recommendations.push('Add JSON-LD BreadcrumbList for better SEO.');
   }
-
-  // Analyze JSON-LD breadcrumbs
-  if (jsonLdBreadcrumbs) {
-    const items = jsonLdBreadcrumbs.itemListElement || [];
-    analysis.depth = items.length;
-
-    if (items.length > 0) {
-      analysis.score += 40; // Has breadcrumb structure
-
-      // Check first item (should be homepage)
-      if (items[0] && items[0].item && items[0].item['@id'] === jsonLdBreadcrumbs.url || items[0].item.name === 'Home') {
-        analysis.score += 10; // Proper homepage reference
-      }
-
-      // Check completeness
-      if (items.length >= 3) {
-        analysis.score += 15; // Good depth
-      } else {
-        analysis.recommendations.push('Consider adding more breadcrumb levels (3+ for better structure)');
-      }
-
-      // Check for proper structure
-      items.forEach((item, index) => {
-        if (item.position === index + 1 && item.name && item.item) {
-          analysis.score += 5; // Proper position and required properties
-        } else {
-          analysis.issues.push(`Breadcrumb item ${index + 1} missing required properties`);
-        }
-      });
-    }
-  }
-
-  // Analyze Microdata breadcrumbs
-  if (analysis.breadcrumbType === 'Microdata') {
-    breadcrumbElements.each((i, elem) => {
-      const $elem = $(elem);
-      const items = $elem.find('[itemprop="itemListElement"]');
-
-      if (items.length > 0) {
-        analysis.depth = items.length;
-        analysis.score += 35; // Has microdata structure
-
-        if (items.length >= 3) {
-          analysis.score += 10; // Good depth
-        }
-      }
-    });
-  }
-
-  // Check accuracy vs actual site structure
-  const currentPath = $('meta[property="og:url"]').attr('content') || url;
-  if (currentPath && jsonLdBreadcrumbs) {
-    // This would need more complex path analysis in a real implementation
-    analysis.accurate = true;
-    analysis.score += 10;
-  }
-
-  // Recommendations
-  if (analysis.depth < 2) {
-    analysis.recommendations.push('Add more breadcrumb levels for better navigation');
-  }
-
-  if (!analysis.structured) {
-    analysis.recommendations.push('Use structured markup (JSON-LD or Microdata) instead of plain HTML');
-  }
-
-  if (!analysis.accurate) {
-    analysis.recommendations.push('Ensure breadcrumbs accurately reflect site structure');
-  }
-
   return analysis;
 }
 
-// Analyze content structure for AI-friendliness
 function analyzeContentStructure($) {
-  const analysis = {
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
-    headerHierarchy: {},
-    paragraphStats: {},
-    contentDensity: 'unknown',
-    readabilityScore: 0
-  };
+  const analysis = { score: 0, maxScore: 100, issues: [], recommendations: [], headerHierarchy: {}, paragraphStats: {}, contentDensity: 'unknown', readabilityScore: 0 };
 
-  // Analyze header hierarchy (H1-H6)
   const headers = {};
   for (let i = 1; i <= 6; i++) {
-    const hElements = $(`h${i}`);
-    headers[`h${i}`] = hElements.length;
-
-    if (hElements.length > 0) {
-      analysis.score += 5; // Has headers
-    }
+    const count = $(`h${i}`).length;
+    headers[`h${i}`] = count;
+    if (count > 0) analysis.score += 5;
   }
+  if (headers.h1 === 1) analysis.score += 15;
+  else if (headers.h1 === 0) analysis.issues.push('Missing H1 tag.');
+  else analysis.issues.push('Multiple H1 tags detected.');
 
+  if (headers.h1 > 0 && headers.h2 > 0) analysis.score += 10;
+  if (headers.h2 > 0 && headers.h3 > 0) analysis.score += 5;
   analysis.headerHierarchy = headers;
 
-  // Check for proper H1 usage
-  if (headers.h1 === 1) {
-    analysis.score += 15; // Single H1 (SEO best practice)
-  } else if (headers.h1 === 0) {
-    analysis.issues.push('Missing H1 tag - add a main page heading');
-  } else if (headers.h1 > 1) {
-    analysis.issues.push('Multiple H1 tags - use only one H1 per page');
-  }
-
-  // Check header hierarchy (H2 should follow H1, etc.)
-  let hierarchyScore = 0;
-  if (headers.h1 > 0 && headers.h2 > 0) hierarchyScore += 10;
-  if (headers.h2 > 0 && headers.h3 > 0) hierarchyScore += 5;
-  analysis.score += hierarchyScore;
-
-  // Analyze paragraph structure
-  const paragraphs = $('p');
-  const paragraphLengths = [];
-
-  paragraphs.each((i, elem) => {
-    const text = $(elem).text().trim();
-    if (text.length > 0) {
-      paragraphLengths.push(text.length);
-    }
-  });
-
+  const paragraphs = $('p').map((i, p) => $(p).text().trim()).get().filter(Boolean);
+  const lengths = paragraphs.map(t => t.length);
+  const avg = lengths.length ? Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length) : 0;
   analysis.paragraphStats = {
     count: paragraphs.length,
-    averageLength: paragraphLengths.length > 0 ? Math.round(paragraphLengths.reduce((a, b) => a + b, 0) / paragraphLengths.length) : 0,
-    minLength: paragraphLengths.length > 0 ? Math.min(...paragraphLengths) : 0,
-    maxLength: paragraphLengths.length > 0 ? Math.max(...paragraphLengths) : 0
+    averageLength: avg,
+    minLength: lengths.length ? Math.min(...lengths) : 0,
+    maxLength: lengths.length ? Math.max(...lengths) : 0
   };
+  if (paragraphs.length > 0) analysis.score += 10;
+  if (avg > 100) analysis.score += 10; else if (avg < 50) analysis.recommendations.push('Consider longer paragraphs (100+ chars).');
 
-  // Paragraph quality scoring
-  if (paragraphs.length > 0) {
-    analysis.score += 10; // Has paragraphs
-
-    const avgLength = analysis.paragraphStats.averageLength;
-    if (avgLength > 100) {
-      analysis.score += 10; // Good paragraph length for readability
-    } else if (avgLength < 50) {
-      analysis.recommendations.push('Consider longer paragraphs (100+ characters) for better content depth');
-    }
-  }
-
-  // Check for lists (good for AI understanding)
-  const lists = $('ul, ol');
+  const lists = $('ul,ol');
   if (lists.length > 0) {
-    analysis.score += 10; // Has structured lists
-
-    lists.each((i, elem) => {
-      const items = $(elem).find('li');
-      if (items.length > 2) {
-        analysis.score += 5; // Meaningful list with multiple items
-      }
-    });
-  } else {
-    analysis.recommendations.push('Add bullet points or numbered lists for better content structure');
-  }
-
-  // Check for content density (not too dense, not too sparse)
-  const contentText = $('body').text().trim();
-  const contentLength = contentText.length;
-
-  if (contentLength > 1000) {
-    analysis.contentDensity = 'comprehensive';
-    analysis.score += 15;
-  } else if (contentLength > 500) {
-    analysis.contentDensity = 'good';
     analysis.score += 10;
-  } else if (contentLength > 200) {
-    analysis.contentDensity = 'basic';
-    analysis.score += 5;
+    lists.each((i, el) => { if ($(el).find('li').length > 2) analysis.score += 5; });
   } else {
-    analysis.issues.push('Very short content - consider adding more detailed information');
+    analysis.recommendations.push('Add bullet/numbered lists where helpful.');
   }
 
-  // Readability analysis
-  if (paragraphLengths.length > 0) {
-    const avgLength = analysis.paragraphStats.averageLength;
-    if (avgLength > 80 && avgLength < 150) {
-      analysis.readabilityScore = 85; // Optimal readability
-      analysis.score += 10;
-    } else if (avgLength > 50 && avgLength < 200) {
-      analysis.readabilityScore = 70; // Good readability
-      analysis.score += 5;
-    }
-  }
+  const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
+  const len = bodyText.length;
+  if (len > 1000) { analysis.contentDensity = 'comprehensive'; analysis.score += 15; }
+  else if (len > 500) { analysis.contentDensity = 'good'; analysis.score += 10; }
+  else if (len > 200) { analysis.contentDensity = 'basic'; analysis.score += 5; }
+  else analysis.issues.push('Very short content on page.');
 
-  // Recommendations based on findings
-  if (Object.values(headers).filter(h => h > 0).length < 2) {
-    analysis.recommendations.push('Use multiple header levels (H1, H2, H3) for better content structure');
-  }
-
-  if (paragraphs.length < 3) {
-    analysis.recommendations.push('Add more paragraph content for better information depth');
-  }
-
-  if (lists.length === 0) {
-    analysis.recommendations.push('Include lists or bullet points for better content organization');
-  }
+  analysis.readabilityScore = fleschKincaidReadingEase(bodyText);
+  if (analysis.readabilityScore >= 70) analysis.score += 10;
+  else if (analysis.readabilityScore >= 50) analysis.score += 5;
 
   return analysis;
 }
 
-// Analyze Core Web Vitals and page speed (simulated based on HTML structure)
 function analyzePerformance($, html, url) {
   const analysis = {
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
+    score: 0, maxScore: 100, issues: [], recommendations: [],
     coreWebVitals: {
       LCP: { value: '0s', score: 0, status: 'unknown' },
       FID: { value: '0ms', score: 0, status: 'unknown' },
       CLS: { value: '0', score: 0, status: 'unknown' }
     },
-    pageSpeed: {
-      loadTime: 'unknown',
-      size: 'unknown',
-      requests: 0,
-      score: 0
-    },
+    pageSpeed: { loadTime: 'unknown', size: `${Math.round((html.length || 0) / 1024)}KB`, requests: 0, score: 0 },
     mobileFriendly: false,
-    technicalSEO: {
-      brokenLinks: 0,
-      redirects: 0,
-      statusCodes: {},
-      score: 0,
-      canonicalFound: false,
-      internalLinks: 0
-    }
+    technicalSEO: { brokenLinks: 0, redirects: 0, statusCodes: {}, score: 0, canonicalFound: false, internalLinks: 0 }
   };
 
-  // Analyze HTML size and complexity
-  const htmlSize = html.length;
-  analysis.pageSpeed.size = `${Math.round(htmlSize / 1024)}KB`;
-
-  // Count external resources (images, scripts, stylesheets)
   const images = $('img').length;
   const scripts = $('script').length;
-  const stylesheets = $('link[rel="stylesheet"]').length;
-  const totalResources = images + scripts + stylesheets;
-  analysis.pageSpeed.requests = totalResources;
+  const styles = $('link[rel="stylesheet"]').length;
+  analysis.pageSpeed.requests = images + scripts + styles;
 
-  // Page speed scoring based on resource count and HTML size
-  if (htmlSize < 50000) { // < 50KB
-    analysis.pageSpeed.score += 25;
-    analysis.pageSpeed.loadTime = '< 1s';
-  } else if (htmlSize < 100000) { // < 100KB
-    analysis.pageSpeed.score += 15;
-    analysis.pageSpeed.loadTime = '1-2s';
-  } else if (htmlSize < 200000) { // < 200KB
-    analysis.pageSpeed.score += 10;
-    analysis.pageSpeed.loadTime = '2-3s';
-  } else {
-    analysis.pageSpeed.loadTime = '> 3s';
-    analysis.issues.push('Large HTML size - consider reducing content or using compression');
-  }
+  const size = html.length;
+  if (size < 50000) { analysis.pageSpeed.score += 25; analysis.pageSpeed.loadTime = '< 1s'; }
+  else if (size < 100000) { analysis.pageSpeed.score += 15; analysis.pageSpeed.loadTime = '1-2s'; }
+  else if (size < 200000) { analysis.pageSpeed.score += 10; analysis.pageSpeed.loadTime = '2-3s'; }
+  else { analysis.pageSpeed.loadTime = '> 3s'; analysis.issues.push('Large HTML size; consider compression/trim.'); }
 
-  // Resource optimization scoring
-  if (totalResources < 20) {
-    analysis.pageSpeed.score += 25; // Optimized resource count
-  } else if (totalResources < 50) {
-    analysis.pageSpeed.score += 15; // Good resource count
-  } else if (totalResources < 100) {
-    analysis.pageSpeed.score += 5; // Acceptable resource count
-  } else {
-    analysis.issues.push('Too many resources - consider combining files or lazy loading');
-  }
+  if (analysis.pageSpeed.requests < 20) analysis.pageSpeed.score += 25;
+  else if (analysis.pageSpeed.requests < 50) analysis.pageSpeed.score += 15;
+  else if (analysis.pageSpeed.requests < 100) analysis.pageSpeed.score += 5;
+  else analysis.issues.push('Too many resources; consider lazy-load and bundling.');
 
-  // Core Web Vitals estimation based on HTML structure
-  // LCP (Largest Contentful Paint) - estimate based on image count and size
-  if (images === 0) {
-    analysis.coreWebVitals.LCP.value = '1.2s';
-    analysis.coreWebVitals.LCP.score = 90;
-    analysis.coreWebVitals.LCP.status = 'good';
-    analysis.score += 15;
-  } else if (images <= 5) {
-    analysis.coreWebVitals.LCP.value = '2.1s';
-    analysis.coreWebVitals.LCP.score = 75;
-    analysis.coreWebVitals.LCP.status = 'needs-improvement';
-    analysis.score += 10;
-  } else {
-    analysis.coreWebVitals.LCP.value = '3.8s';
-    analysis.coreWebVitals.LCP.score = 40;
-    analysis.coreWebVitals.LCP.status = 'poor';
-    analysis.issues.push('Multiple images may impact LCP - consider image optimization');
-  }
+  // LCP estimate
+  if (images === 0) { analysis.coreWebVitals.LCP = { value: '1.2s', score: 90, status: 'good' }; analysis.score += 15; }
+  else if (images <= 5) { analysis.coreWebVitals.LCP = { value: '2.1s', score: 75, status: 'needs-improvement' }; analysis.score += 10; }
+  else { analysis.coreWebVitals.LCP = { value: '3.8s', score: 40, status: 'poor' }; analysis.issues.push('Many images may worsen LCP; optimize.'); }
 
-  // FID (First Input Delay) - estimate based on JavaScript
-  if (scripts <= 3) {
-    analysis.coreWebVitals.FID.value = '45ms';
-    analysis.coreWebVitals.FID.score = 95;
-    analysis.coreWebVitals.FID.status = 'good';
-    analysis.score += 15;
-  } else if (scripts <= 8) {
-    analysis.coreWebVitals.FID.value = '120ms';
-    analysis.coreWebVitals.FID.score = 65;
-    analysis.coreWebVitals.FID.status = 'needs-improvement';
-    analysis.score += 8;
-  } else {
-    analysis.coreWebVitals.FID.value = '280ms';
-    analysis.coreWebVitals.FID.score = 30;
-    analysis.coreWebVitals.FID.status = 'poor';
-    analysis.issues.push('Multiple scripts may impact FID - consider code splitting');
-  }
+  // FID estimate
+  if (scripts <= 3) { analysis.coreWebVitals.FID = { value: '45ms', score: 95, status: 'good' }; analysis.score += 15; }
+  else if (scripts <= 8) { analysis.coreWebVitals.FID = { value: '120ms', score: 65, status: 'needs-improvement' }; analysis.score += 8; }
+  else { analysis.coreWebVitals.FID = { value: '280ms', score: 30, status: 'poor' }; analysis.issues.push('Heavy JS can worsen FID; defer/split.'); }
 
-  // CLS (Cumulative Layout Shift) - estimate based on content structure
-  const hasFixedDimensions = $('img[width][height], [style*="width"][style*="height"]').length;
-  const hasViewport = $('meta[name="viewport"]').length;
+  // CLS estimate
+  const hasViewport = $('meta[name="viewport"]').length > 0;
+  const fixedDims = $('img[width][height], [style*="width"][style*="height"]').length;
+  if (hasViewport && fixedDims > 0) { analysis.coreWebVitals.CLS = { value: '0.05', score: 95, status: 'good' }; analysis.score += 15; }
+  else if (hasViewport) { analysis.coreWebVitals.CLS = { value: '0.15', score: 65, status: 'needs-improvement' }; analysis.score += 8; }
+  else { analysis.coreWebVitals.CLS = { value: '0.35', score: 20, status: 'poor' }; analysis.issues.push('Missing viewport meta; critical for mobile.'); }
 
-  if (hasFixedDimensions > 0 && hasViewport > 0) {
-    analysis.coreWebVitals.CLS.value = '0.05';
-    analysis.coreWebVitals.CLS.score = 95;
-    analysis.coreWebVitals.CLS.status = 'good';
-    analysis.score += 15;
-  } else if (hasViewport > 0) {
-    analysis.coreWebVitals.CLS.value = '0.15';
-    analysis.coreWebVitals.CLS.score = 65;
-    analysis.coreWebVitals.CLS.status = 'needs-improvement';
-    analysis.score += 8;
-  } else {
-    analysis.coreWebVitals.CLS.value = '0.35';
-    analysis.coreWebVitals.CLS.score = 20;
-    analysis.coreWebVitals.CLS.status = 'poor';
-    analysis.issues.push('Missing viewport meta tag - essential for mobile performance');
-  }
+  analysis.mobileFriendly = hasViewport;
+  if (analysis.mobileFriendly) { analysis.score += 15; analysis.technicalSEO.score += 20; }
+  else analysis.recommendations.push('Add <meta name="viewport" content="width=device-width, initial-scale=1.0">');
 
-  // Mobile-friendliness analysis
-  analysis.mobileFriendly = hasViewport > 0;
-  if (analysis.mobileFriendly) {
-    analysis.score += 15;
-    analysis.technicalSEO.score += 20;
+  if ($('meta[name="theme-color"]').length > 0) { analysis.score += 5; analysis.technicalSEO.score += 10; }
+  if ($('link[rel="manifest"]').length > 0) { analysis.score += 5; analysis.technicalSEO.score += 10; }
 
-    // Check for mobile-specific optimizations
-    if ($('meta[name="theme-color"]').length > 0) {
-      analysis.score += 5;
-      analysis.technicalSEO.score += 10;
-    }
-
-    if ($('link[rel="manifest"]').length > 0) {
-      analysis.score += 5;
-      analysis.technicalSEO.score += 10;
-    }
-  } else {
-    analysis.issues.push('Missing viewport meta tag - critical for mobile SEO');
-    analysis.recommendations.push('Add <meta name="viewport" content="width=device-width, initial-scale=1.0">');
-  }
-
-  // Technical SEO analysis
-  // Check for meta robots
-  const robotsMeta = $('meta[name="robots"]');
-  if (robotsMeta.length > 0) {
-    const robotsContent = robotsMeta.attr('content');
-    if (robotsContent && !robotsContent.includes('noindex') && !robotsContent.includes('nofollow')) {
-      analysis.technicalSEO.score += 20;
-      analysis.score += 10;
-    } else {
-      analysis.issues.push('Robots meta tag may be blocking search engines');
-    }
-  }
-
-  // Check for structured data density
+  // Structured data density
   const jsonLdCount = $('script[type="application/ld+json"]').length;
-  const microdataCount = $('[itemtype]').length;
+  const microCount = $('[itemscope]').length;
   const rdfaCount = $('[typeof]').length;
+  if (jsonLdCount > 0 || microCount > 0 || rdfaCount > 0) { analysis.technicalSEO.score += 20; analysis.score += 10; }
+  else analysis.issues.push('No structured data found.');
 
-  if (jsonLdCount > 0 || microdataCount > 0 || rdfaCount > 0) {
-    analysis.technicalSEO.score += 20;
-    analysis.score += 10;
-  } else {
-    analysis.issues.push('No structured data found - missing SEO opportunities');
-  }
-
-  // Check for external links
-  const externalLinks = $('a[href^="http"]:not([href^="' + url + '"])').length;
-  if (externalLinks > 0 && externalLinks < 10) {
-    analysis.technicalSEO.score += 10;
-  } else if (externalLinks >= 10) {
-    analysis.technicalSEO.score += 5; // Good external linking
-  }
-
-  // Performance recommendations
-  if (scripts > 5) {
-    analysis.recommendations.push('Consider reducing JavaScript files or using code splitting');
-  }
-
-  if (stylesheets > 3) {
-    analysis.recommendations.push('Consider combining CSS files or using critical CSS');
-  }
-
-  if (images > 10) {
-    analysis.recommendations.push('Consider image optimization and lazy loading');
-  }
-
-  // Mobile recommendations
-  if (!analysis.mobileFriendly) {
-    analysis.recommendations.push('Implement responsive design for mobile SEO');
-  }
-
-  if (analysis.coreWebVitals.LCP.status === 'poor') {
-    analysis.recommendations.push('Optimize Largest Contentful Paint (aim for < 2.5s)');
-  }
-
-  if (analysis.coreWebVitals.FID.status === 'poor') {
-    analysis.recommendations.push('Reduce First Input Delay (aim for < 100ms)');
-  }
-
-  if (analysis.coreWebVitals.CLS.status === 'poor') {
-    analysis.recommendations.push('Minimize Cumulative Layout Shift (aim for < 0.1)');
-  }
-
-  return analysis;
-}
-function analyzeJsonLdGraph(jsonLd) {
-  const analysis = {
-    score: 0,
-    maxScore: 100,
-    issues: [],
-    recommendations: [],
-    graphComplexity: 0,
-    relationships: [],
-    crossReferences: 0,
-    schemaTypes: new Set(),
-    depth: 0
-  };
-
-  // Find @graph structures
-  const graphSchemas = jsonLd.filter(schema => schema['@graph']);
-
-  if (graphSchemas.length === 0) {
-    analysis.issues.push('No @graph structures found');
-    analysis.recommendations.push('Consider using @graph for complex schema relationships');
-    return analysis;
-  }
-
-  analysis.score += 20; // Has @graph structure
-
-  graphSchemas.forEach(schema => {
-    const graph = schema['@graph'];
-    if (Array.isArray(graph)) {
-      analysis.depth = Math.max(analysis.depth, graph.length);
-      analysis.score += 15; // Multiple schemas in graph
-
-      graph.forEach((item, index) => {
-        const itemType = item['@type'] || item.type;
-        if (itemType) {
-          analysis.schemaTypes.add(itemType);
-        }
-
-        // Check for relationships
-        if (item.sameAs || item.url) {
-          analysis.crossReferences += 1;
-        }
-
-        // Check for nested properties
-        Object.keys(item).forEach(key => {
-          if (typeof item[key] === 'object' && item[key]['@type']) {
-            analysis.relationships.push(`${itemType} -> ${item[key]['@type']}`);
-            analysis.score += 5; // Nested schema relationships
-          }
-        });
-      });
-
-      // Graph complexity scoring
-      if (graph.length > 5) {
-        analysis.graphComplexity = 'high';
-        analysis.score += 15;
-      } else if (graph.length > 2) {
-        analysis.graphComplexity = 'medium';
-        analysis.score += 10;
-      } else {
-        analysis.graphComplexity = 'basic';
-        analysis.score += 5;
-      }
-    }
-  });
-
-  // Remove duplicates from schema types
-  analysis.schemaTypes = Array.from(analysis.schemaTypes);
-
-  // Scoring for schema diversity
-  if (analysis.schemaTypes.length > 3) {
-    analysis.score += 15; // Good schema diversity
-  } else if (analysis.schemaTypes.length > 1) {
-    analysis.score += 10; // Basic schema diversity
-  }
-
-  // Cross-references scoring
-  if (analysis.crossReferences > 0) {
-    analysis.score += 10; // Has cross-references
-  } else {
-    analysis.recommendations.push('Add cross-references between related schemas');
-  }
-
-  // Recommendations
-  if (analysis.depth < 3) {
-    analysis.recommendations.push('Consider adding more schema entities to the @graph');
-  }
-
-  if (analysis.relationships.length === 0) {
-    analysis.recommendations.push('Add nested schema relationships for better context');
-  }
-
-  if (analysis.schemaTypes.length < 2) {
-    analysis.recommendations.push('Include multiple schema types in @graph for comprehensive data');
-  }
+  // Suggestions
+  if (scripts > 5) analysis.recommendations.push('Reduce JS files or split/defer to improve interactivity.');
+  if (styles > 3) analysis.recommendations.push('Combine CSS or use critical CSS.');
+  if (images > 10) analysis.recommendations.push('Use compression and lazy-loading for images.');
 
   return analysis;
 }
 
+// -------------------------------------
+// Meta consistency / Canonical / Crawlability
+// -------------------------------------
+function analyzeMetaConsistency($, pageSchemas) {
+  const res = { score: 0, maxScore: 100, issues: [], recommendations: [], details: {} };
+  const title = $('title').first().text().trim();
+  const metaDesc = $('meta[name="description"]').attr('content') || '';
+  const ogTitle = $('meta[property="og:title"]').attr('content') || '';
+  const ogDesc = $('meta[property="og:description"]').attr('content') || '';
+
+  // Attempt to find primary schema "name"
+  const primary = pageSchemas.find(s => /Hotel|LocalBusiness|Organization|Product|Article/i.test(String(s['@type'])));
+  const schemaName = primary?.name || '';
+
+  res.details = { title, metaDesc, ogTitle, ogDesc, schemaName };
+
+  let points = 0;
+  if (title && schemaName && title.toLowerCase().includes(schemaName.toLowerCase())) points += 25;
+  if (metaDesc && ogDesc && metaDesc.slice(0, 60) === ogDesc.slice(0, 60)) points += 15; // similar starts
+  if (ogTitle && title && ogTitle.slice(0, 50) === title.slice(0, 50)) points += 15;
+
+  res.score = points;
+  if (!schemaName) res.recommendations.push('Primary entity missing a clear name.');
+  if (!metaDesc) res.recommendations.push('Add <meta name="description">');
+  if (!ogTitle || !ogDesc) res.recommendations.push('Add OpenGraph title/description for consistency.');
+  return res;
+}
+
+function analyzeCanonicalOgAlignment($, pageUrl) {
+  const res = { score: 0, maxScore: 100, issues: [], recommendations: [], details: {} };
+  const canonical = $('link[rel="canonical"]').attr('href') || '';
+  const ogUrl = $('meta[property="og:url"]').attr('content') || '';
+
+  const resolvedCanonical = canonical ? absolutize(canonical, pageUrl) : '';
+  const resolvedOg = ogUrl ? absolutize(ogUrl, pageUrl) : '';
+
+  res.details = { canonical: resolvedCanonical, ogUrl: resolvedOg, pageUrl };
+
+  let points = 0;
+  if (resolvedCanonical && resolvedOg && resolvedCanonical === resolvedOg) points += 40;
+  if (resolvedCanonical && resolvedCanonical.split('#')[0] === pageUrl.split('#')[0]) points += 30;
+  if (!resolvedCanonical) res.recommendations.push('Add a rel="canonical" link.');
+  if (!resolvedOg) res.recommendations.push('Add og:url for clarity.');
+  res.score = points;
+  return res;
+}
+
+function analyzeCrawlability($, pageUrl) {
+  const res = { score: 0, maxScore: 100, issues: [], recommendations: [], details: {} };
+  const robotsMeta = $('meta[name="robots"]').attr('content') || '';
+  const isNoIndex = /noindex/i.test(robotsMeta);
+  const isNoFollow = /nofollow/i.test(robotsMeta);
+
+  const anchors = $('a[href]').map((i, a) => $(a).attr('href')).get();
+  const internal = anchors.filter(h => h && !/^https?:\/\//i.test(h)).length;
+  const nofollowLinks = $('a[rel*="nofollow"]').length;
+
+  res.details = { robotsMeta, internalLinks: internal, nofollowLinks };
+
+  let points = 50; // start from decent
+  if (isNoIndex) { res.issues.push('Page is noindex.'); points -= 40; }
+  if (isNoFollow) { res.recommendations.push('Avoid nofollow on important pages.'); points -= 10; }
+  if (internal === 0) res.recommendations.push('Add internal links to important pages.');
+
+  res.score = Math.max(0, points);
+  return res;
+}
+
+// -------------------------------------
+// Rich Results Eligibility (light heuristic)
+// -------------------------------------
+function richResultsEligibility(allSchemas, pageUrl) {
+  const eligibility = [];
+
+  function push(name, ok, reasons = []) {
+    eligibility.push({ feature: name, eligible: ok, reasons });
+  }
+
+  // WebSite SearchAction
+  const site = allSchemas.find(s => /website/i.test(String(s['@type'])));
+  if (site) {
+    const pa = site.potentialAction;
+    const ok = pa && /SearchAction/i.test(String(pa['@type'])) && pa.target && String(pa['query-input'] || pa['queryInput']).includes('required');
+    push('Sitelinks Searchbox (WebSite + SearchAction)', !!ok, ok ? [] : ['Missing/invalid SearchAction target or query-input']);
+  }
+
+  // Logo/Organization
+  const org = allSchemas.find(s => /Organization/i.test(String(s['@type'])));
+  if (org) {
+    const ok = !!org.logo && !!org.url;
+    push('Organization Logo', ok, ok ? [] : ['Add Organization.logo and Organization.url']);
+  }
+
+  // LocalBusiness contactPoint
+  const lb = allSchemas.find(s => /LocalBusiness|Hotel|LodgingBusiness/i.test(String(s['@type'])));
+  if (lb) {
+    const cp = lb.contactPoint;
+    const ok = !!cp;
+    push('LocalBusiness ContactPoint', ok, ok ? [] : ['Add Organization.contactPoint (phone, contactType, availableLanguage)']);
+  }
+
+  // VideoObject
+  const video = allSchemas.find(s => /VideoObject/i.test(String(s['@type'])));
+  if (video) {
+    const ok = !!video.name && !!video.thumbnailUrl && !!video.uploadDate;
+    const reasons = [];
+    if (!video.name) reasons.push('name');
+    if (!video.thumbnailUrl) reasons.push('thumbnailUrl');
+    if (!video.uploadDate) reasons.push('uploadDate');
+    push('Video Rich Result', ok, ok ? [] : reasons.map(r => `Missing ${r}`));
+  }
+
+  // ImageObject
+  const image = allSchemas.find(s => /ImageObject/i.test(String(s['@type'])));
+  if (image) {
+    const ok = !!image.url;
+    push('Image Rich Result Signals', ok, ok ? [] : ['Add ImageObject.url']);
+  }
+
+  // QAPage
+  const qa = allSchemas.find(s => /QAPage/i.test(String(s['@type'])));
+  if (qa) {
+    const ok = Array.isArray(qa.mainEntity) && qa.mainEntity.length > 0;
+    push('Q&A Rich Result', ok, ok ? [] : ['QAPage.mainEntity must be a non-empty array']);
+  }
+
+  // Article
+  const article = allSchemas.find(s => /Article|BlogPosting|NewsArticle/i.test(String(s['@type'])));
+  if (article) {
+    const ok = !!article.headline && !!article.image && !!article.datePublished && !!article.author;
+    const miss = [];
+    if (!article.headline) miss.push('headline');
+    if (!article.image) miss.push('image');
+    if (!article.datePublished) miss.push('datePublished');
+    if (!article.author) miss.push('author');
+    push('Article Rich Result', ok, ok ? [] : miss.map(m => `Missing ${m}`));
+  }
+
+  // ItemList
+  const list = allSchemas.find(s => /ItemList/i.test(String(s['@type'])));
+  if (list) {
+    const ok = Array.isArray(list.itemListElement) && list.itemListElement.length > 0;
+    push('ItemList (collections/carousels)', ok, ok ? [] : ['ItemList.itemListElement should be non-empty']);
+  }
+
+  // Product
+  const prod = allSchemas.find(s => /Product/i.test(String(s['@type'])));
+  if (prod) {
+    const hasOffer = !!prod.offers;
+    const reasons = [];
+    if (!hasOffer) reasons.push('offers');
+    push('Product Rich Results / Listings', hasOffer, hasOffer ? [] : reasons.map(r => `Missing ${r}`));
+  }
+
+  return eligibility;
+}
+
+// -------------------------------------
+// API Route
+// -------------------------------------
 app.post('/api/analyze', async (req, res) => {
   try {
     const { url } = req.body;
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+    let pageUrl;
+    try { pageUrl = new URL(url).href; } catch { return res.status(400).json({ error: 'Invalid URL format' }); }
 
-    if (!url) {
-      return res.status(400).json({ error: 'URL is required' });
-    }
-
-    // Validate URL format
-    let urlObj;
-    try {
-      urlObj = new URL(url);
-    } catch (error) {
-      return res.status(400).json({ error: 'Invalid URL format' });
-    }
-
-    // Fetch HTML with timeout and user agent
-    const response = await axios.get(url, {
-      timeout: 10000,
+    // Fetch HTML
+    const response = await axios.get(pageUrl, {
+      timeout: 15000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
+        'Accept-Language': 'en-US,en;q=0.8'
       },
       maxRedirects: 5
     });
-
+    const finalUrl = response.request?.res?.responseUrl || pageUrl;
     const html = response.data;
-
-    // Validate HTML content
-    if (!html || typeof html !== 'string') {
-      return res.status(400).json({ error: 'Invalid HTML content received from website.' });
-    }
+    if (!html || typeof html !== 'string') return res.status(400).json({ error: 'Invalid HTML content.' });
 
     let $;
-    try {
-      $ = cheerio.load(html);
-    } catch (parseError) {
-      console.error('HTML parsing error:', parseError.message);
-      return res.status(400).json({ error: 'Unable to parse website HTML. The website may have malformed content.' });
-    }
+    try { $ = cheerio.load(html); } catch { return res.status(400).json({ error: 'Unable to parse HTML.' }); }
 
-    // Extract all schema types
-    let jsonLd = [], microdata = [], rdfa = [];
-    try {
-      jsonLd = extractJsonLd($);
-    } catch (error) {
-      console.error('JSON-LD extraction failed:', error.message);
-    }
+    // Extract schemas
+    const jsonLd = extractJsonLd($);
+    const microdata = extractMicrodata($, finalUrl);
+    const rdfa = extractRdfa($, finalUrl);
 
-    try {
-      microdata = extractMicrodata($);
-    } catch (error) {
-      console.error('Microdata extraction failed:', error.message);
-    }
+    // Merge all schemas for cross-analyses
+    const allSchemas = [...jsonLd, ...microdata, ...rdfa];
 
-    try {
-      rdfa = extractRdfa($);
-    } catch (error) {
-      console.error('RDFa extraction failed:', error.message);
-    }
+    // Analyses
+    const robotsAnalysis = await analyzeRobotsTxt(finalUrl);
+    const llmAnalysis = await analyzeLlmTxt(finalUrl);
+    const aiAnalysis = await analyzeAiTxt(finalUrl);
+    const openGraphAnalysis = await analyzeOpenGraph(finalUrl);
+    const sitemapAnalysis = await analyzeSitemap(finalUrl);
+    const faqHowToAnalysis = analyzeFaqHowToSchema(allSchemas);
+    const breadcrumbAnalysis = analyzeBreadcrumbs($, finalUrl);
+    const contentStructureAnalysis = analyzeContentStructure($);
+    const performanceAnalysis = analyzePerformance($, html, finalUrl);
+    const metaConsistency = analyzeMetaConsistency($, allSchemas);
+    const canonicalOgAlignment = analyzeCanonicalOgAlignment($, finalUrl);
+    const crawlability = analyzeCrawlability($, finalUrl);
+    const richEligibility = richResultsEligibility(allSchemas, finalUrl);
 
-    // Analyze robots.txt and LLM.txt
-    let robotsAnalysis = null;
-    let llmAnalysis = null;
-
-    try {
-      robotsAnalysis = await analyzeRobotsTxt(url);
-    } catch (error) {
-      console.error('Robots.txt analysis failed:', error.message);
-    }
-
-    try {
-      llmAnalysis = await analyzeLlmTxt(url);
-    } catch (error) {
-      console.error('LLM.txt analysis failed:', error.message);
-    }
-
-    // Analyze OpenGraph, AI.txt, and sitemap.xml
-    let openGraphAnalysis = null;
-    let aiAnalysis = null;
-    let sitemapAnalysis = null;
-
-    try {
-      openGraphAnalysis = await analyzeOpenGraph(url);
-    } catch (error) {
-      console.error('OpenGraph analysis failed:', error.message);
-    }
-
-    try {
-      aiAnalysis = await analyzeAiTxt(url);
-    } catch (error) {
-      console.error('AI.txt analysis failed:', error.message);
-    }
-
-    try {
-      sitemapAnalysis = await analyzeSitemap(url);
-    } catch (error) {
-      console.error('Sitemap.xml analysis failed:', error.message);
-    }
-
-    // Analyze advanced AEO/GEO elements
-    let faqHowToAnalysis = null;
-    let breadcrumbAnalysis = null;
-    let contentStructureAnalysis = null;
-    let jsonLdGraphAnalysis = null;
-    let performanceAnalysis = null;
-
-    try {
-      faqHowToAnalysis = analyzeFaqHowToSchema(jsonLd, microdata, rdfa);
-    } catch (error) {
-      console.error('FAQ/HowTo analysis failed:', error.message);
-    }
-
-    try {
-      breadcrumbAnalysis = analyzeBreadcrumbs($);
-    } catch (error) {
-      console.error('Breadcrumb analysis failed:', error.message);
-    }
-
-    try {
-      contentStructureAnalysis = analyzeContentStructure($);
-    } catch (error) {
-      console.error('Content structure analysis failed:', error.message);
-    }
-
-    try {
-      jsonLdGraphAnalysis = analyzeJsonLdGraph(jsonLd);
-    } catch (error) {
-      console.error('JSON-LD graph analysis failed:', error.message);
-    }
-
-    try {
-      performanceAnalysis = analyzePerformance($, html, url);
-    } catch (error) {
-      console.error('Performance analysis failed:', error.message);
-    }
+    // Validation for target schemas
     const matched = [];
-
-    // Check JSON-LD
-    jsonLd.forEach((item, index) => {
-      const schemaType = item['@type'] || item.type;
+    allSchemas.forEach((schema, index) => {
+      const schemaType = normalizeType(schema['@type']);
       if (schemaType && matchesTargetSchemas(schemaType)) {
-        const validation = validateSchema(item, schemaType);
+        const primaryType = schemaType.split(',')[0].trim(); // if multiple, pick first for rules
+        const validation = validateSchema(schema, primaryType);
         matched.push({
-          type: 'JSON-LD',
-          schemaType: schemaType,
-          data: item,
-          index: index,
-          validation: validation
+          type: schemaType,
+          sourceIndex: index,
+          source: jsonLd.includes(schema) ? 'JSON-LD' : (microdata.includes(schema) ? 'Microdata' : 'RDFa'),
+          data: schema,
+          validation
         });
       }
     });
 
-    // Check Microdata
-    microdata.forEach((item, index) => {
-      if (matchesTargetSchemas(item.type)) {
-        const validation = validateSchema(item.properties, item.type);
-        matched.push({
-          type: 'Microdata',
-          schemaType: item.type,
-          data: item,
-          index: index,
-          validation: validation
-        });
-      }
-    });
+    // Overall validation score
+    const totalValidationScore = matched.reduce((s, m) => s + (m.validation?.score || 0), 0);
+    const totalMaxScore = matched.reduce((s, m) => s + (m.validation?.maxScore || 0), 0);
+    const schemaCount = matched.length;
+    const averageValidationScore = schemaCount ? Math.round(totalValidationScore / schemaCount) : 0;
 
-    // Check RDFa
-    rdfa.forEach((item, index) => {
-      if (matchesTargetSchemas(item.type)) {
-        const validation = validateSchema(item.properties, item.type);
-        matched.push({
-          type: 'RDFa',
-          schemaType: item.type,
-          data: item,
-          index: index,
-          validation: validation
-        });
-      }
-    });
-
-    // Calculate overall validation score
-    const totalValidationScore = matched.reduce((sum, match) => sum + match.validation.score, 0);
-    const totalMaxScore = matched.reduce((sum, match) => sum + match.validation.maxScore, 0);
-    const averageValidationScore = matched.length > 0 ? Math.round(totalValidationScore / matched.length) : 0;
-
-    // Return results
-    res.json({
-      url: url,
-      jsonLd: jsonLd,
-      microdata: microdata,
-      rdfa: rdfa,
-      matched: matched,
+    return res.json({
+      url: finalUrl,
+      jsonLd,
+      microdata,
+      rdfa,
+      allSchemasCount: allSchemas.length,
+      matched,
       validation: {
         averageScore: averageValidationScore,
         totalScore: totalValidationScore,
         totalMaxScore: totalMaxScore,
-        schemaCount: matched.length
+        schemaCount
       },
-      robotsAnalysis: robotsAnalysis,
-      llmAnalysis: llmAnalysis,
-      openGraphAnalysis: openGraphAnalysis,
-  }
-});
-
-// Check Microdata
-microdata.forEach((item, index) => {
-  if (matchesTargetSchemas(item.type)) {
-    const validation = validateSchema(item.properties, item.type);
-    matched.push({
-      type: 'Microdata',
-      schemaType: item.type,
-      data: item,
-      index: index,
-      validation: validation
+      // SEO/AEO/GEO & infra
+      robotsAnalysis,
+      llmAnalysis,
+      aiAnalysis,
+      openGraphAnalysis,
+      sitemapAnalysis,
+      faqHowToAnalysis,
+      breadcrumbAnalysis,
+      contentStructureAnalysis,
+      performanceAnalysis,
+      metaConsistency,
+      canonicalOgAlignment,
+      crawlability,
+      richEligibility
     });
+  } catch (error) {
+    console.error('API Analysis error:', error);
+    return res.status(500).json({ error: `Server error: ${error.message}` });
   }
 });
 
-// Check RDFa
-rdfa.forEach((item, index) => {
-  if (matchesTargetSchemas(item.type)) {
-    const validation = validateSchema(item.properties, item.type);
-    matched.push({
-      type: 'RDFa',
-      schemaType: item.type,
-      data: item,
-      index: index,
-      validation: validation
-    });
-  }
-});
-
-// Calculate overall validation score
-const totalValidationScore = matched.reduce((sum, match) => sum + match.validation.score, 0);
-const totalMaxScore = matched.reduce((sum, match) => sum + match.validation.maxScore, 0);
-const averageValidationScore = matched.length > 0 ? Math.round(totalValidationScore / matched.length) : 0;
-
-// Send response
-return res.json({
-  url: url,
-  jsonLd: jsonLd,
-  microdata: microdata,
-  rdfa: rdfa,
-  matched: matched,
-  validation: {
-    averageScore: averageValidationScore,
-    totalScore: totalValidationScore,
-    totalMaxScore: totalMaxScore,
-    schemaCount: matched.length
-  },
-  robotsAnalysis: robotsAnalysis,
-  llmAnalysis: llmAnalysis,
-  openGraphAnalysis: openGraphAnalysis,
-  aiAnalysis: aiAnalysis,
-  sitemapAnalysis: sitemapAnalysis,
-  faqHowToAnalysis: faqHowToAnalysis,
-  breadcrumbAnalysis: breadcrumbAnalysis,
-  contentStructureAnalysis: contentStructureAnalysis,
-  jsonLdGraphAnalysis: jsonLdGraphAnalysis,
-  performanceAnalysis: performanceAnalysis,
-  totalFound: jsonLd.length + microdata.length + rdfa.length,
-  totalMatched: matched.length
-});
-
-} catch (error) {
-  console.error('API Analysis error:', error);
-  return res.status(500).json({ error: `Server error: ${error.message}` });
-}
-
+// -------------------------------------
+// Serve UI
+// -------------------------------------
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Export the app for serverless deployment (don't start listening)
+// For local run:
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+}
+
+// Export for serverless, tests, etc.
 module.exports = app;
