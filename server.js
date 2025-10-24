@@ -4,6 +4,7 @@ const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
 
+// Create Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -392,6 +393,7 @@ const SCHEMA_VALIDATION_RULES = {
     },
     docs: 'https://schema.org/BusinessEvent'
   }
+};
 
 // Validate a single schema object
 function validateSchema(schema, schemaType) {
@@ -2091,8 +2093,5 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Schema.org Validator running on http://localhost:${PORT}`);
-  console.log(`Target schemas: ${TARGET_SCHEMAS.join(', ')}`);
-});
+// Export the app for serverless deployment (don't start listening)
+module.exports = app;
