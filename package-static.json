@@ -1,0 +1,16 @@
+{
+  "name": "schema-validator-static",
+  "version": "1.0.0",
+  "description": "Client-side Schema.org validator",
+  "main": "index.html",
+  "scripts": {
+    "serve": "npx serve ."
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12"
+  },
+  "keywords": ["schema.org", "validator", "seo", "client-side"],
+  "author": "",
+  "license": "MIT"
+}

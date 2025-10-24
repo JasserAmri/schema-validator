@@ -1,0 +1,86 @@
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What time is check-in and check-out?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Check-in time is 3:00 PM and check-out time is 12:00 PM. Early check-in and late check-out may be available upon request and subject to availability."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do you offer free WiFi?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, we provide complimentary high-speed WiFi throughout the hotel, including all guest rooms, public areas, and the business center."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is parking available?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "We offer valet parking service for €35 per day. Limited street parking is also available in the surrounding area. Electric vehicle charging stations are available on-site."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do you have a fitness center?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, our 24-hour fitness center features modern cardio equipment, free weights, and a variety of exercise machines. Personal training sessions are available for an additional fee."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is breakfast included in the room rate?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Continental breakfast is included in most room rates. We offer a full breakfast buffet for €25 per person. Room service breakfast is also available from 6:00 AM to 11:00 AM."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is your cancellation policy?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Cancellations must be made 24 hours prior to arrival to avoid a one-night room and tax charge. For reservations of 3 or more nights, a 48-hour cancellation notice is required."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Are pets allowed?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "We welcome pets under 25 pounds for a non-refundable cleaning fee of €50. Pet amenities include bowls, beds, and treats. Service animals are always welcome at no additional charge."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do you have accessible rooms?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, we offer ADA-compliant accessible rooms with features including widened doorways, grab bars, roll-in showers, and lowered amenities. Please specify accessibility needs when booking."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What amenities are available in the rooms?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "All rooms include air conditioning, flat-screen TV, minibar, safe, work desk, premium bedding, and luxury toiletries. Deluxe rooms and suites feature additional amenities like balconies and separate sitting areas."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How far are you from major attractions?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "We are located in the heart of Paris: 2 minutes walk to Luxembourg Gardens, 10 minutes to Notre-Dame Cathedral, 15 minutes by metro to the Eiffel Tower, and 20 minutes to the Louvre Museum."
+      }
+    }
+  ]
+}

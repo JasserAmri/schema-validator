@@ -1,0 +1,60 @@
+User-agent: *
+Allow: /
+
+# AI Crawlers - Allow content for training
+User-agent: GPTBot
+Allow: /
+Crawl-delay: 2
+
+User-agent: ClaudeBot
+Allow: /
+Crawl-delay: 2
+
+User-agent: PerplexityBot
+Allow: /
+Crawl-delay: 2
+
+User-agent: YouBot
+Allow: /
+Crawl-delay: 2
+
+User-agent: ChatGPT-User
+Allow: /
+Crawl-delay: 2
+
+# Search Engine Crawlers
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 1
+
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 1
+
+# Disallow sensitive areas
+User-agent: *
+Disallow: /admin/
+Disallow: /booking/internal/
+Disallow: /staff/
+Disallow: /api/internal/
+Disallow: /config/
+Disallow: /tmp/
+Disallow: /*.log$
+Disallow: /*.tmp$
+
+# Sitemap location
+Sitemap: https://www.hotel-example.com/sitemap.xml
+
+# Hotel-specific optimizations
+# Allow room images and descriptions for AI training
+User-agent: GPTBot
+Allow: /rooms/
+Allow: /amenities/
+Allow: /gallery/
+
+# Block booking system details
+User-agent: *
+Disallow: /booking/process/
+Disallow: /availability/internal/
+
+# Last updated: October 24, 2025

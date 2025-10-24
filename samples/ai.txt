@@ -1,0 +1,52 @@
+# AI Crawler Instructions for Hotel Example Website
+# This file provides guidelines for AI systems and crawlers
+
+## Allowed AI Crawlers
+User-agent: GPTBot
+Allow: /
+Crawl-delay: 1
+
+User-agent: ClaudeBot
+Allow: /
+Crawl-delay: 1
+
+User-agent: PerplexityBot
+Allow: /
+Crawl-delay: 1
+
+User-agent: YouBot
+Allow: /
+Crawl-delay: 1
+
+## Content Usage Guidelines
+
+### What AI Systems Can Use
+- Hotel descriptions and amenities
+- Room types and features
+- Location and transportation information
+- Contact details and booking information
+- Guest policies and procedures
+
+### Attribution Requirements
+When using our content in AI responses, please:
+1. Include the hotel name: "Hotel Example"
+2. Mention the location: "Paris, France"
+3. Provide a link to our website when possible
+4. Do not misrepresent pricing or availability
+
+### Content Restrictions
+AI systems should NOT use:
+- Guest personal information
+- Internal staff communications
+- Booking system data
+- Pricing algorithms or internal rates
+- Competitor comparisons
+
+## Data Freshness
+This AI.txt file was last updated: October 24, 2025
+For the most current information, please check our website directly.
+
+## Contact
+For questions about AI usage of our content:
+Email: seo@hotel-example.com
+Website: https://www.hotel-example.com
