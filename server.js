@@ -2,20 +2,40 @@
 // Schema / SEO / AEO / GEO Analyzer (full, hardened)
 // ---------------------------------------------------
 
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 
 // -------------------------------------
 // App setup
 // -------------------------------------
 const app = express();
 const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
-app.use(cors());
-app.use(express.json());
+// CORS configuration
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS === '*' ? '*' :
+          (process.env.ALLOWED_ORIGINS || '*').split(',').map(o => o.trim()),
+  optionsSuccessStatus: 200
+};
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes default
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'),
+  message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '1mb' }));
+app.use('/api/', limiter);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // -------------------------------------
@@ -694,7 +714,12 @@ async function analyzeRobotsTxt(url) {
 
   try {
     const robotsUrl = new URL('/robots.txt', url).href;
-    const res = await axios.get(robotsUrl, { timeout: 6000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const timeout = parseInt(process.env.TIMEOUT_ROBOTS || '6000');
+    const res = await axios.get(robotsUrl, {
+      timeout,
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      maxContentLength: parseInt(process.env.MAX_CONTENT_LENGTH || '10485760')
+    });
     analysis.exists = true;
     const content = String(res.data || '');
     const lines = content.split('\n');
@@ -736,7 +761,12 @@ async function analyzeLlmTxt(url) {
   const analysis = { exists: false, score: 0, maxScore: 100, issues: [], recommendations: [], sections: [], aiGuidelines: [], businessInfo: false, hasContact: false, contentQuality: 'none' };
   try {
     const llmsUrl = new URL('/llms.txt', url).href;
-    const res = await axios.get(llmsUrl, { timeout: 6000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const timeout = parseInt(process.env.TIMEOUT_GENERAL || '6000');
+    const res = await axios.get(llmsUrl, {
+      timeout,
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      maxContentLength: parseInt(process.env.MAX_CONTENT_LENGTH || '10485760')
+    });
     analysis.exists = true;
     const content = String(res.data || '');
     const lines = content.split('\n');
@@ -779,7 +809,12 @@ async function analyzeAiTxt(url) {
   const analysis = { exists: false, score: 0, maxScore: 100, issues: [], recommendations: [], aiCrawlers: [], usageGuidelines: [], attributionRequired: false };
   try {
     const aiUrl = new URL('/ai.txt', url).href;
-    const res = await axios.get(aiUrl, { timeout: 6000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const timeout = parseInt(process.env.TIMEOUT_GENERAL || '6000');
+    const res = await axios.get(aiUrl, {
+      timeout,
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      maxContentLength: parseInt(process.env.MAX_CONTENT_LENGTH || '10485760')
+    });
     const lines = String(res.data || '').split('\n');
     analysis.exists = true;
 
@@ -814,7 +849,12 @@ async function analyzeAiTxt(url) {
 async function analyzeOpenGraph(url) {
   const analysis = { exists: false, score: 0, maxScore: 100, issues: [], recommendations: [], tags: {}, twitterTags: {}, socialCoverage: [], hotelSpecific: {} };
   try {
-    const res = await axios.get(url, { timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const timeout = parseInt(process.env.TIMEOUT_GENERAL || '10000');
+    const res = await axios.get(url, {
+      timeout,
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      maxContentLength: parseInt(process.env.MAX_CONTENT_LENGTH || '10485760')
+    });
     const $ = cheerio.load(res.data);
     analysis.exists = true;
 
@@ -873,7 +913,12 @@ async function analyzeSitemap(url) {
   const analysis = { exists: false, score: 0, maxScore: 100, issues: [], recommendations: [], urlCount: 0, xmlValid: false, priorities: [], changeFreqs: [], hasImages: false };
   try {
     const sitemapUrl = new URL('/sitemap.xml', url).href;
-    const res = await axios.get(sitemapUrl, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const timeout = parseInt(process.env.TIMEOUT_SITEMAP || '8000');
+    const res = await axios.get(sitemapUrl, {
+      timeout,
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      maxContentLength: parseInt(process.env.MAX_CONTENT_LENGTH || '10485760')
+    });
     const $ = cheerio.load(res.data, { xmlMode: true });
     analysis.exists = true;
 
@@ -1332,8 +1377,12 @@ app.post('/api/analyze', async (req, res) => {
     try { pageUrl = new URL(url).href; } catch { return res.status(400).json({ error: 'Invalid URL format' }); }
 
     // Fetch HTML
+    const timeout = parseInt(process.env.TIMEOUT_PAGE || '15000');
+    const maxContentLength = parseInt(process.env.MAX_CONTENT_LENGTH || '10485760');
     const response = await axios.get(pageUrl, {
-      timeout: 15000,
+      timeout,
+      maxContentLength,
+      maxBodyLength: maxContentLength,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -1424,7 +1473,27 @@ app.post('/api/analyze', async (req, res) => {
     });
   } catch (error) {
     console.error('API Analysis error:', error);
-    return res.status(500).json({ error: `Server error: ${error.message}` });
+
+    // Sanitize error messages for production
+    let userMessage = 'An error occurred while analyzing the URL.';
+
+    if (error.code === 'ENOTFOUND') {
+      userMessage = 'Unable to reach the URL. Please check the domain name.';
+    } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+      userMessage = 'Request timed out. The website may be slow or unreachable.';
+    } else if (error.response?.status === 403) {
+      userMessage = 'Access forbidden. The website may be blocking automated requests.';
+    } else if (error.response?.status === 404) {
+      userMessage = 'Page not found. Please check the URL.';
+    } else if (error.response?.status === 429) {
+      userMessage = 'Too many requests to the target site. Please try again later.';
+    } else if (error.response?.status >= 500) {
+      userMessage = 'The target website is experiencing server errors.';
+    } else if (NODE_ENV === 'development') {
+      userMessage = `Development error: ${error.message}`;
+    }
+
+    return res.status(500).json({ error: userMessage });
   }
 });
 
