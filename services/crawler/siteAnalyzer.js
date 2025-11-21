@@ -172,9 +172,9 @@ function detectCrossPageContradictions(pageResults) {
   const ratings = new Map();
 
   pageResults.forEach(page => {
-    if (!page.matched) return;
+    if (!page.pageAnalysis || !page.pageAnalysis.matched) return;
 
-    page.matched.forEach(schema => {
+    page.pageAnalysis.matched.forEach(schema => {
       const schemaType = schema.type || '';
 
       // Collect business names
@@ -278,16 +278,17 @@ function computeAggregateScores(classifiedPages, pageResults) {
 
   classifiedPages.forEach(page => {
     const result = pageResults.find(r => r.url === page.url);
-    if (!result || !result.validation) return;
+    if (!result || !result.pageAnalysis) return;
 
+    const analysis = result.pageAnalysis;
     const weight = page.weight || 0.1;
     totalWeight += weight;
 
     // Schema quality score (validation average)
-    schemaQuality += (result.validation.averageScore || 0) * weight;
+    schemaQuality += (analysis.validation?.averageScore || 0) * weight;
 
     // AI readiness score (average of all AI modules)
-    const aiModules = result.aiReadiness || {};
+    const aiModules = analysis.aiReadiness || {};
     const aiScores = [
       aiModules.llmQueryAnswerability?.score || 0,
       aiModules.entityClarity?.score || 0,
@@ -306,10 +307,10 @@ function computeAggregateScores(classifiedPages, pageResults) {
     aiReadiness += aiAvg * weight;
 
     // Technical score (performance + crawlability)
-    technical += ((result.performanceAnalysis?.score || 0) + (result.crawlability?.score || 0)) / 2 * weight;
+    technical += ((analysis.performanceAnalysis?.score || 0) + (analysis.crawlability?.score || 0)) / 2 * weight;
 
     // Content quality score
-    contentQuality += ((result.contentStructureAnalysis?.readabilityScore || 0) + (result.faqHowToAnalysis?.score || 0)) / 2 * weight;
+    contentQuality += ((analysis.contentStructureAnalysis?.readabilityScore || 0) + (analysis.faqHowToAnalysis?.score || 0)) / 2 * weight;
   });
 
   // Normalize by total weight
@@ -390,7 +391,7 @@ async function analyzeSite(classifiedPages) {
       url: fetchedPage.url,
       pageType: pageInfo?.pageType || 'other',
       weight: pageInfo?.weight || 0.1,
-      analysis,
+      pageAnalysis: analysis,
       success: true
     });
   }
@@ -431,8 +432,8 @@ async function analyzeSite(classifiedPages) {
       ai: aiAnalysis,
       sitemap: sitemapAnalysis
     },
-    crossPageIssues,
-    aggregatedScores,
+    crossPageContradictions: crossPageIssues,
+    aggregateScores: aggregatedScores,
     pageCount: pageResults.length,
     successfulPages: pageResults.filter(p => p.success).length
   };
