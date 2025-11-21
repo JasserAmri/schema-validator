@@ -28,139 +28,264 @@
       <div id="error" class="muted"></div>
     </div>
 
-    <!-- Summary -->
-    <div class="grid cols-3">
-      <div class="card">
-        <h3>Summary</h3>
-        <div class="kv">
-          <div><b>Total Schemas</b> <span id="totalSchemas">0</span></div>
-          <div><b>Validated Targets</b> <span id="matchedCount">0</span></div>
-          <div><b>Avg Validation</b> <span id="avgValidation">0</span></div>
-        </div>
-        <div class="badges" id="matchedBadges"></div>
-      </div>
-
-      <div class="card">
-        <h3>Validation</h3>
-        <div class="kv">
-          <div><b>Total Points</b> <span id="totalPoints">0</span></div>
-          <div><b>Max Points</b> <span id="maxPoints">0</span></div>
-          <div><b>Schemas Validated</b> <span id="schemasValidated">0</span></div>
-        </div>
-        <div>
-          <span id="validationScorePill" class="score">0</span>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Rich Results Eligibility</h3>
-        <div id="eligibility" class="elig"></div>
+    <!-- Sticky Summary Header (shows on scroll) -->
+    <div id="stickySummary" class="sticky-summary hidden">
+      <div class="sticky-content">
+        <span class="sticky-label">Overall AI Score:</span>
+        <span id="stickyScore" class="score">0</span>
+        <span class="sticky-divider">|</span>
+        <span class="sticky-label">Critical Issues:</span>
+        <span id="stickyCritical" class="badge-count">0</span>
+        <span class="sticky-divider">|</span>
+        <span id="stickyUrl" class="sticky-url"></span>
       </div>
     </div>
 
-    <!-- Area cards -->
-    <div class="grid cols-3">
-
-      <div class="card">
-        <h3>robots.txt</h3>
-        <div class="kv"><b>Score</b> <span id="robotsScore" class="score">0</span></div>
-        <div id="robotsDetails" class="sub"></div>
-        <div class="list" id="robotsIssues"></div>
-        <div class="list" id="robotsRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>llms.txt</h3>
-        <div class="kv"><b>Score</b> <span id="llmScore" class="score">0</span></div>
-        <div id="llmDetails" class="sub"></div>
-        <div class="list" id="llmIssues"></div>
-        <div class="list" id="llmRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>ai.txt</h3>
-        <div class="kv"><b>Score</b> <span id="aiScore" class="score">0</span></div>
-        <div id="aiDetails" class="sub"></div>
-        <div class="list" id="aiIssues"></div>
-        <div class="list" id="aiRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>OpenGraph / Twitter</h3>
-        <div class="kv"><b>Score</b> <span id="ogScore" class="score">0</span></div>
-        <div id="ogDetails" class="sub"></div>
-        <div class="list" id="ogIssues"></div>
-        <div class="list" id="ogRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>Sitemap</h3>
-        <div class="kv"><b>Score</b> <span id="smScore" class="score">0</span></div>
-        <div id="smDetails" class="sub"></div>
-        <div class="list" id="smIssues"></div>
-        <div class="list" id="smRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>Crawlability</h3>
-        <div class="kv"><b>Score</b> <span id="crawlScore" class="score">0</span></div>
-        <div id="crawlDetails" class="sub"></div>
-        <div class="list" id="crawlIssues"></div>
-        <div class="list" id="crawlRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>Meta Consistency</h3>
-        <div class="kv"><b>Score</b> <span id="metaScore" class="score">0</span></div>
-        <div id="metaDetails" class="sub"></div>
-        <div class="list" id="metaIssues"></div>
-        <div class="list" id="metaRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>Canonical / OG Alignment</h3>
-        <div class="kv"><b>Score</b> <span id="canScore" class="score">0</span></div>
-        <div id="canDetails" class="sub"></div>
-        <div class="list" id="canIssues"></div>
-        <div class="list" id="canRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>Content Structure</h3>
-        <div class="kv"><b>Score</b> <span id="contentScore" class="score">0</span></div>
-        <div id="contentDetails" class="sub"></div>
-        <div class="list" id="contentIssues"></div>
-        <div class="list" id="contentRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>Breadcrumbs</h3>
-        <div class="kv"><b>Score</b> <span id="bcScore" class="score">0</span></div>
-        <div id="bcDetails" class="sub"></div>
-        <div class="list" id="bcIssues"></div>
-        <div class="list" id="bcRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>FAQ / HowTo (AEO)</h3>
-        <div class="kv"><b>Score</b> <span id="faqScore" class="score">0</span></div>
-        <div id="faqDetails" class="sub"></div>
-        <div class="list" id="faqIssues"></div>
-        <div class="list" id="faqRecs"></div>
-      </div>
-
-      <div class="card">
-        <h3>Performance</h3>
-        <div class="kv"><b>Score</b> <span id="perfScore" class="score">0</span></div>
-        <div id="perfDetails" class="sub"></div>
-        <div class="list" id="perfIssues"></div>
-        <div class="list" id="perfRecs"></div>
+    <!-- Tab Navigation -->
+    <div id="tabsContainer" class="tabs-container hidden">
+      <div class="tabs">
+        <button class="tab active" data-section="overview">
+          📊 Overview <span class="tab-badge" id="tabOverviewCount"></span>
+        </button>
+        <button class="tab" data-section="ai-readiness">
+          🤖 AI Readiness <span class="tab-badge" id="tabAiCount"></span>
+        </button>
+        <button class="tab" data-section="schema">
+          📋 Schemas <span class="tab-badge" id="tabSchemaCount"></span>
+        </button>
+        <button class="tab" data-section="seo">
+          🔍 SEO & Crawling <span class="tab-badge" id="tabSeoCount"></span>
+        </button>
+        <button class="tab" data-section="performance">
+          ⚡ Performance <span class="tab-badge" id="tabPerfCount"></span>
+        </button>
       </div>
     </div>
 
-    <!-- Schemas -->
-    <div class="section-title">Schemas Found</div>
-    <div id="schemasWrap" class="grid cols-2"></div>
+    <!-- Tab Content Sections -->
+    <div id="tabContent">
+
+      <!-- OVERVIEW TAB -->
+      <div class="tab-section active" data-section="overview">
+
+        <!-- Overall AI Readiness Score -->
+        <div id="overallScoreCard" class="overall-score-card hidden">
+          <div class="overall-score-header">
+            <h2>Overall AI Readiness Score</h2>
+            <span class="info-icon" data-tooltip="This score represents how well your website is optimized for AI systems like ChatGPT, Perplexity, Google SGE, and other LLMs. It combines multiple factors that AI uses to understand and recommend your property.">ⓘ</span>
+          </div>
+          <div class="overall-score-display">
+            <div class="score-circle">
+              <span id="overallScoreValue" class="overall-score-value">0</span>
+              <span class="overall-score-max">/100</span>
+            </div>
+            <div id="overallScoreStatus" class="overall-status">Calculating...</div>
+          </div>
+          <div class="progress-bar-large">
+            <div id="overallScoreBar" class="progress-fill-large" style="width: 0%"></div>
+          </div>
+          <button id="expandWeightedBtn" class="expand-weights-btn">Show Weighted Breakdown ▼</button>
+          <div id="weightedBreakdown" class="weighted-breakdown hidden">
+            <h3>Category Breakdown</h3>
+            <div id="weightedCategories"></div>
+          </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="grid cols-3">
+          <div class="card">
+            <h3>Summary
+              <span class="info-icon" data-tooltip="Quick overview of how many schemas were found on your page and how many match our validation targets (Hotel, FAQ, HowTo, etc.)">ⓘ</span>
+            </h3>
+            <div class="kv">
+              <div><b>Total Schemas</b> <span id="totalSchemas">0</span></div>
+              <div><b>Validated Targets</b> <span id="matchedCount">0</span></div>
+              <div><b>Avg Validation</b> <span id="avgValidation">0</span></div>
+            </div>
+            <div class="badges" id="matchedBadges"></div>
+          </div>
+
+          <div class="card">
+            <h3>Validation
+              <span class="info-icon" data-tooltip="Shows the total validation points your schemas earned. Higher scores mean better structured data quality for AI and search engines.">ⓘ</span>
+            </h3>
+            <div class="kv">
+              <div><b>Total Points</b> <span id="totalPoints">0</span></div>
+              <div><b>Max Points</b> <span id="maxPoints">0</span></div>
+              <div><b>Schemas Validated</b> <span id="schemasValidated">0</span></div>
+            </div>
+            <div>
+              <span id="validationScorePill" class="score">0</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Rich Results Eligibility
+              <span class="info-icon" data-tooltip="Shows which Google Rich Results features your page qualifies for. Rich results appear prominently in search and are used by AI to answer queries.">ⓘ</span>
+            </h3>
+            <div id="eligibility" class="elig"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- AI READINESS TAB -->
+      <div class="tab-section" data-section="ai-readiness">
+        <div class="section-title-bar">
+          <h2>🤖 AI Readiness Analysis</h2>
+          <span class="info-icon" data-tooltip="These modules analyze how well your website serves AI language models (like ChatGPT, Claude, Perplexity). AI systems use this information to answer guest questions about your hotel.">ⓘ</span>
+        </div>
+        <div id="aiReadinessGrid" class="grid cols-3"></div>
+      </div>
+
+      <!-- SCHEMA TAB -->
+      <div class="tab-section" data-section="schema">
+        <div class="section-title-bar">
+          <h2>📋 Schemas Found</h2>
+          <button id="expandAllSchemas" class="expand-all-btn">Expand All ▼</button>
+        </div>
+        <div id="schemasWrap" class="grid cols-2"></div>
+      </div>
+
+      <!-- SEO TAB -->
+      <div class="tab-section" data-section="seo">
+        <div class="section-title-bar">
+          <h2>🔍 SEO & Crawling Analysis</h2>
+        </div>
+        <div class="grid cols-3">
+
+          <div class="card">
+            <h3>robots.txt
+              <span class="info-icon" data-tooltip="Controls which bots can crawl your site. Essential for allowing AI crawlers (GPTBot, ClaudeBot, PerplexityBot) to access your content.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="robotsScore" class="score">0</span></div>
+            <div id="robotsDetails" class="sub"></div>
+            <div class="list" id="robotsIssues"></div>
+            <div class="list" id="robotsRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>llms.txt
+              <span class="info-icon" data-tooltip="A new standard file that tells AI language models what content to prioritize. Think of it as a sitemap specifically for AI systems.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="llmScore" class="score">0</span></div>
+            <div id="llmDetails" class="sub"></div>
+            <div class="list" id="llmIssues"></div>
+            <div class="list" id="llmRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>ai.txt
+              <span class="info-icon" data-tooltip="Declares AI crawling policies and attribution requirements. Lets you specify how AI can use your content and whether attribution is required.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="aiScore" class="score">0</span></div>
+            <div id="aiDetails" class="sub"></div>
+            <div class="list" id="aiIssues"></div>
+            <div class="list" id="aiRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>OpenGraph / Twitter Cards
+              <span class="info-icon" data-tooltip="Social media meta tags that show rich previews when your page is shared. AI systems also use these tags to understand your page's title, description, and main image.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="ogScore" class="score">0</span></div>
+            <div id="ogDetails" class="sub"></div>
+            <div class="list" id="ogIssues"></div>
+            <div class="list" id="ogRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>Sitemap
+              <span class="info-icon" data-tooltip="XML file listing all your pages. Helps search engines and AI crawlers discover and index your entire website efficiently.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="smScore" class="score">0</span></div>
+            <div id="smDetails" class="sub"></div>
+            <div class="list" id="smIssues"></div>
+            <div class="list" id="smRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>Crawlability
+              <span class="info-icon" data-tooltip="Measures how easily bots can navigate your site. Includes robots meta tags, internal linking, and nofollow link analysis.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="crawlScore" class="score">0</span></div>
+            <div id="crawlDetails" class="sub"></div>
+            <div class="list" id="crawlIssues"></div>
+            <div class="list" id="crawlRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>Meta Consistency
+              <span class="info-icon" data-tooltip="Checks if your page title, meta description, and schema name are consistent. Inconsistencies confuse AI systems trying to understand your property.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="metaScore" class="score">0</span></div>
+            <div id="metaDetails" class="sub"></div>
+            <div class="list" id="metaIssues"></div>
+            <div class="list" id="metaRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>Canonical / OG Alignment
+              <span class="info-icon" data-tooltip="Canonical URL tells search engines which version of a page is the 'main' one. Should match your og:url tag to avoid duplicate content issues.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="canScore" class="score">0</span></div>
+            <div id="canDetails" class="sub"></div>
+            <div class="list" id="canIssues"></div>
+            <div class="list" id="canRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>Content Structure
+              <span class="info-icon" data-tooltip="Analyzes your heading hierarchy (H1-H6), paragraph count, and readability. Well-structured content is easier for AI to parse and summarize.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="contentScore" class="score">0</span></div>
+            <div id="contentDetails" class="sub"></div>
+            <div class="list" id="contentIssues"></div>
+            <div class="list" id="contentRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>Breadcrumbs
+              <span class="info-icon" data-tooltip="Navigation path showing where the current page sits in your site hierarchy. Helps AI understand your site structure and improves search result displays.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="bcScore" class="score">0</span></div>
+            <div id="bcDetails" class="sub"></div>
+            <div class="list" id="bcIssues"></div>
+            <div class="list" id="bcRecs"></div>
+          </div>
+
+          <div class="card">
+            <h3>FAQ / HowTo (AEO)
+              <span class="info-icon" data-tooltip="FAQ and HowTo schemas are critical for Answer Engine Optimization (AEO). AI assistants use these to directly answer user questions.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="faqScore" class="score">0</span></div>
+            <div id="faqDetails" class="sub"></div>
+            <div class="list" id="faqIssues"></div>
+            <div class="list" id="faqRecs"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- PERFORMANCE TAB -->
+      <div class="tab-section" data-section="performance">
+        <div class="section-title-bar">
+          <h2>⚡ Performance Analysis</h2>
+        </div>
+        <div class="grid cols-3">
+          <div class="card">
+            <h3>Performance
+              <span class="info-icon" data-tooltip="Fast-loading sites rank better and are crawled more frequently. AI bots have crawl budgets, so faster sites get indexed more completely.">ⓘ</span>
+            </h3>
+            <div class="kv"><b>Score</b> <span id="perfScore" class="score">0</span></div>
+            <div id="perfDetails" class="sub"></div>
+            <div class="list" id="perfIssues"></div>
+            <div class="list" id="perfRecs"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
 
   </div>
 
@@ -173,12 +298,107 @@
     const loading = $('#loading');
     const errorBox = $('#error');
 
+    // Explanations for AI readiness modules
+    const AI_MODULE_EXPLANATIONS = {
+      llmQueryAnswerability: {
+        title: 'LLM Query Answerability',
+        icon: '💬',
+        tooltip: 'Checks if your page answers common guest questions that AI assistants look for (check-in time, parking, pets, WiFi, breakfast, etc.)'
+      },
+      entityClarity: {
+        title: 'Entity Clarity',
+        icon: '🏷️',
+        tooltip: 'Validates if your business is clearly identifiable to AI through Wikipedia links, Wikidata, social profiles, and global identifiers'
+      },
+      localRelevanceSignals: {
+        title: 'Local Relevance Signals',
+        icon: '📍',
+        tooltip: 'Checks local SEO elements that AI uses for location-based queries: complete address, geo coordinates, phone number, opening hours'
+      },
+      roomSchemaCompleteness: {
+        title: 'Room Schema Completeness',
+        icon: '🛏️',
+        tooltip: 'Analyzes how well your hotel room schemas cover critical properties AI looks for when answering booking queries'
+      },
+      imageAiReadiness: {
+        title: 'Image AI Readiness',
+        icon: '🖼️',
+        tooltip: 'Checks if your images have descriptive alt text and proper schema markup so AI can "see" and describe your property'
+      },
+      policyCompleteness: {
+        title: 'Policy Completeness',
+        icon: '📜',
+        tooltip: 'Verifies that hotel policies (cancellation, pets, check-in, payment) are present in both schema AND visible content'
+      },
+      contentContradictions: {
+        title: 'Content Contradictions',
+        icon: '⚠️',
+        tooltip: 'Detects mismatches between schema data and visible content (prices, ratings, addresses). AI trusts consistent data more.'
+      },
+      jsContentWarnings: {
+        title: 'JavaScript Content Warnings',
+        icon: '⚙️',
+        tooltip: 'Warns if critical content only appears after JavaScript execution. Some AI crawlers don\'t run JavaScript.'
+      },
+      aiReadySummaries: {
+        title: 'AI-Ready Summaries',
+        icon: '📝',
+        tooltip: 'Checks quality of description fields. AI uses these to generate summaries. Should be 100-500 characters with relevant keywords.'
+      },
+      missingSchemas: {
+        title: 'Missing Schema Suggestions',
+        icon: '🔍',
+        tooltip: 'Suggests schema types your content supports but aren\'t implemented (FAQPage, HowTo, Restaurant, Event, etc.)'
+      },
+      aiMetadata: {
+        title: 'AI Metadata Validation',
+        icon: '🏷️',
+        tooltip: 'Validates AI-specific metadata: OpenGraph tags, Twitter Cards, canonical URLs, robots meta tags'
+      },
+      internalLinking: {
+        title: 'Internal Linking Depth',
+        icon: '🔗',
+        tooltip: 'Analyzes internal linking structure. Good internal links help AI crawlers discover and understand your site hierarchy.'
+      },
+      contentStaleness: {
+        title: 'Content Staleness',
+        icon: '📅',
+        tooltip: 'Detects outdated content beyond dates: old year references, COVID mentions, temporal phrases that may be stale'
+      }
+    };
+
+    // Official documentation links
+    const DOCS = {
+      schemaOrg: 'https://schema.org',
+      schemaHotel: 'https://schema.org/Hotel',
+      schemaFAQ: 'https://schema.org/FAQPage',
+      schemaHowTo: 'https://schema.org/HowTo',
+      googleStructuredData: 'https://developers.google.com/search/docs/appearance/structured-data',
+      googleFAQ: 'https://developers.google.com/search/docs/appearance/structured-data/faqpage',
+      googleHowTo: 'https://developers.google.com/search/docs/appearance/structured-data/how-to',
+      googleRichResults: 'https://developers.google.com/search/docs/appearance/structured-data/search-gallery',
+      googleSEO: 'https://developers.google.com/search/docs',
+      webDev: 'https://web.dev/measure/'
+    };
+
+    // Category weights for overall score
+    const CATEGORY_WEIGHTS = [
+      { name: 'Schema Quality', weight: 0.25, key: 'validation', why: 'AI systems like ChatGPT and Perplexity rely heavily on structured data to answer hotel-specific queries.' },
+      { name: 'AI Crawlability', weight: 0.20, keys: ['robotsAnalysis', 'crawlability'], why: 'AI bots must be able to access and index your content efficiently.' },
+      { name: 'Content & Policies', weight: 0.15, key: 'aiReadiness.policyCompleteness', why: 'Complete policy information helps AI answer guest questions about cancellation, pets, etc.' },
+      { name: 'FAQ Richness', weight: 0.15, keys: ['faqHowToAnalysis', 'aiReadiness.llmQueryAnswerability'], why: 'FAQ schema helps AI systems provide direct answers to common questions.' },
+      { name: 'Performance', weight: 0.10, key: 'performanceAnalysis', why: 'Fast-loading sites are preferred by AI crawlers and rank better.' },
+      { name: 'Image Readiness', weight: 0.10, key: 'aiReadiness.imageAiReadiness', why: 'Descriptive alt text helps AI understand and describe your property.' },
+      { name: 'Freshness', weight: 0.05, key: 'aiReadiness.contentStaleness', why: 'AI prefers fresh, up-to-date content over stale information.' }
+    ];
+
     function scoreClass(v){
       if (v >= 85) return 'excellent';
       if (v >= 70) return 'good';
       if (v >= 45) return 'fair';
       return 'poor';
     }
+
     function htmlEscape(s){
       return String(s)
         .replace(/&/g,'&amp;')
@@ -187,39 +407,129 @@
         .replace(/"/g,'&quot;')
         .replace(/'/g,'&#39;')
     }
+
     function cleanClone(obj){
-      // Remove undefined / functions; keep JSON-serializable
       return JSON.parse(JSON.stringify(obj));
     }
+
     function jsonSyntaxHighlight(json){
       let s = htmlEscape(JSON.stringify(cleanClone(json), null, 2));
-      // Keys
       s = s.replace(/(^|\n)\s*"(.*?)"\s*:/g, (m, a, b)=> `${a}<span class="k">"${b}"</span>:` );
-      // Strings
       s = s.replace(/: "(.*?)"/g, (m, v)=> `: <span class="s">"${v}"</span>`);
-      // Numbers
       s = s.replace(/: ([\-]?\d+(?:\.\d+)?)(,?)/g, (m, num, comma)=> `: <span class="n">${num}</span>${comma}`);
-      // true/false/null
       s = s.replace(/: (true|false|null)/g, (m, b)=> `: <span class="b">${b}</span>`);
       return s;
     }
+
     function setScore(el, v){
       el.textContent = v;
       el.className = 'score ' + scoreClass(v);
     }
+
     function listInto(el, arr, cls){
       el.innerHTML = (arr||[]).map(t => `<div class="${cls}">${htmlEscape(t.message || t)}</div>`).join('');
     }
+
     function kv(...pairs){
       return pairs.filter(Boolean).map(([k,v])=>`<div><b>${htmlEscape(k)}</b> ${htmlEscape(v)}</div>`).join('');
     }
+
     function pill(text, href){
       if (href) return `<a class="pill docs" href="${href}" target="_blank" rel="noopener">${htmlEscape(text)} ⧉</a>`;
       return `<span class="pill">${htmlEscape(text)}</span>`;
     }
 
+    function getSeverity(text) {
+      if (/critical|must|required|missing required|high priority/i.test(text)) return 'critical';
+      if (/should|recommended|consider|important/i.test(text)) return 'important';
+      return 'optional';
+    }
+
+    function getCategory(text, moduleName) {
+      if (/schema|markup|json-ld|microdata/i.test(text) || /schema|room/i.test(moduleName)) return 'schema';
+      if (/crawl|robot|sitemap|index/i.test(text)) return 'seo';
+      if (/ai|llm|chatgpt|perplexity|claude/i.test(text)) return 'ai';
+      if (/image|alt|photo/i.test(text)) return 'accessibility';
+      if (/performance|speed|load/i.test(text)) return 'performance';
+      return 'general';
+    }
+
     analyzeBtn.addEventListener('click', analyze);
     urlInput.addEventListener('keypress', e => { if (e.key === 'Enter') analyze(); });
+
+    // Tab switching
+    $$('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        $$('.tab').forEach(t => t.classList.remove('active'));
+        $$('.tab-section').forEach(s => s.classList.remove('active'));
+        tab.classList.add('active');
+        const section = tab.dataset.section;
+        $(`.tab-section[data-section="${section}"]`).classList.add('active');
+      });
+    });
+
+    // Weighted breakdown toggle
+    document.addEventListener('click', (e) => {
+      if (e.target.id === 'expandWeightedBtn') {
+        const breakdown = $('#weightedBreakdown');
+        const btn = $('#expandWeightedBtn');
+        if (breakdown.classList.contains('hidden')) {
+          breakdown.classList.remove('hidden');
+          btn.textContent = 'Hide Weighted Breakdown ▲';
+        } else {
+          breakdown.classList.add('hidden');
+          btn.textContent = 'Show Weighted Breakdown ▼';
+        }
+      }
+
+      if (e.target.id === 'expandAllSchemas') {
+        const allBodies = $$('.schema-body');
+        const btn = $('#expandAllSchemas');
+        const allExpanded = allBodies.every(b => b.style.display === 'block');
+        allBodies.forEach(b => b.style.display = allExpanded ? 'none' : 'block');
+        btn.textContent = allExpanded ? 'Expand All ▼' : 'Collapse All ▲';
+      }
+    });
+
+    // Sticky summary on scroll
+    window.addEventListener('scroll', () => {
+      const sticky = $('#stickySummary');
+      if (window.scrollY > 200) {
+        sticky.classList.remove('hidden');
+      } else {
+        sticky.classList.add('hidden');
+      }
+    });
+
+    // Tooltip functionality
+    document.addEventListener('mouseover', (e) => {
+      if (e.target.classList.contains('info-icon')) {
+        const tooltip = e.target.dataset.tooltip;
+        if (!tooltip) return;
+
+        let tooltipEl = document.getElementById('active-tooltip');
+        if (!tooltipEl) {
+          tooltipEl = document.createElement('div');
+          tooltipEl.id = 'active-tooltip';
+          tooltipEl.className = 'tooltip-popup';
+          document.body.appendChild(tooltipEl);
+        }
+
+        tooltipEl.textContent = tooltip;
+        tooltipEl.style.display = 'block';
+
+        const rect = e.target.getBoundingClientRect();
+        tooltipEl.style.left = rect.left + 'px';
+        tooltipEl.style.top = (rect.bottom + 5) + 'px';
+      }
+    });
+
+    document.addEventListener('mouseout', (e) => {
+      if (e.target.classList.contains('info-icon')) {
+        const tooltipEl = document.getElementById('active-tooltip');
+        if (tooltipEl) tooltipEl.style.display = 'none';
+      }
+    });
 
     async function analyze(){
       const url = urlInput.value.trim();
@@ -227,6 +537,10 @@
       errorBox.textContent = '';
       loading.style.display = 'block';
       analyzeBtn.disabled = true;
+
+      // Hide results
+      $('#tabsContainer').classList.add('hidden');
+      $('#overallScoreCard').classList.add('hidden');
 
       try{
         const r = await fetch('/api/analyze',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
@@ -242,6 +556,27 @@
     }
 
     function renderAll(data){
+      // Show UI elements
+      $('#tabsContainer').classList.remove('hidden');
+      $('#overallScoreCard').classList.remove('hidden');
+
+      // Calculate overall AI score
+      const overallScore = calculateOverallAiScore(data);
+      renderOverallScore(overallScore, data);
+
+      // Update sticky summary
+      $('#stickyScore').textContent = overallScore.overallScore;
+      $('#stickyScore').className = 'score ' + scoreClass(overallScore.overallScore);
+      $('#stickyCritical').textContent = overallScore.criticalIssues || 0;
+      $('#stickyUrl').textContent = data.url || '';
+
+      // Update tab badges
+      $('#tabOverviewCount').textContent = '';
+      $('#tabAiCount').textContent = data.aiReadiness ? Object.keys(data.aiReadiness).length : 0;
+      $('#tabSchemaCount').textContent = data.validation?.schemaCount || 0;
+      $('#tabSeoCount').textContent = '';
+      $('#tabPerfCount').textContent = '';
+
       // Summary
       const totalSchemas = (data.jsonLd?.length||0) + (data.microdata?.length||0) + (data.rdfa?.length||0);
       $('#totalSchemas').textContent = totalSchemas;
@@ -265,6 +600,9 @@
         return `<span class="badge ${cls}">${htmlEscape(e.feature)} • ${title}${reasons}</span>`;
       }).join('');
 
+      // AI Readiness modules
+      renderAiReadiness(data.aiReadiness);
+
       // Area cards
       fillArea('robots', data.robotsAnalysis, (a)=> kv(['Exists', a.exists?'Yes':'No'], ['AI bots', (a.aiCrawlers||[]).join(', ')||'None'], ['Sitemap', a.sitemapFound ? a.sitemapUrl : 'Not declared']));
       fillArea('llm', data.llmAnalysis, (a)=> kv(['Exists', a.exists?'Yes':'No'], ['Quality', a.contentQuality||'none'], ['Sections', (a.sections||[]).length]));
@@ -279,8 +617,161 @@
       fillArea('faq', data.faqHowToAnalysis, (a)=> kv(['FAQ count', a.totalQuestions||0], ['HowTo steps', a.totalSteps||0], ['Snippet Potential', a.featuredSnippetPotential||'low']));
       fillArea('perf', data.performanceAnalysis, (a)=> kv(['Size', a.pageSpeed?.size||'—'], ['Requests', a.pageSpeed?.requests||0], ['Mobile', a.mobileFriendly?'Yes':'—'], ['LCP', a.coreWebVitals?.LCP?.value||'—']));
 
-      // Schemas (clean preview + validation mapping)
+      // Schemas
       renderSchemas(data);
+    }
+
+    function calculateOverallAiScore(data) {
+      let totalScore = 0;
+      let criticalCount = 0;
+      const categories = [];
+
+      CATEGORY_WEIGHTS.forEach(cat => {
+        let score = 0;
+
+        if (cat.keys) {
+          // Average multiple scores
+          const scores = cat.keys.map(key => {
+            const parts = key.split('.');
+            let val = data;
+            for (const part of parts) {
+              val = val?.[part];
+            }
+            return val?.score || 0;
+          });
+          score = scores.reduce((a, b) => a + b, 0) / scores.length;
+        } else if (cat.key) {
+          // Single score
+          const parts = cat.key.split('.');
+          let val = data;
+          for (const part of parts) {
+            val = val?.[part];
+          }
+          score = val?.score || (val?.averageScore || 0);
+        }
+
+        const contribution = score * cat.weight;
+        totalScore += contribution;
+
+        categories.push({
+          name: cat.name,
+          weight: cat.weight,
+          score: Math.round(score),
+          contribution: contribution.toFixed(1),
+          why: cat.why
+        });
+
+        if (score < 50) criticalCount++;
+      });
+
+      return {
+        overallScore: Math.round(totalScore),
+        categories,
+        criticalIssues: criticalCount
+      };
+    }
+
+    function renderOverallScore(overallScore, data) {
+      $('#overallScoreValue').textContent = overallScore.overallScore;
+      $('#overallScoreStatus').textContent = scoreClass(overallScore.overallScore).toUpperCase();
+      $('#overallScoreStatus').className = 'overall-status ' + scoreClass(overallScore.overallScore);
+
+      const bar = $('#overallScoreBar');
+      bar.style.width = overallScore.overallScore + '%';
+      bar.className = 'progress-fill-large ' + scoreClass(overallScore.overallScore);
+
+      // Render weighted breakdown
+      const breakdown = $('#weightedCategories');
+      breakdown.innerHTML = overallScore.categories.map(cat => `
+        <div class="weight-row">
+          <div class="weight-row-header">
+            <span class="weight-cat-name">${htmlEscape(cat.name)}</span>
+            <span class="weight-badge">${Math.round(cat.weight * 100)}%</span>
+          </div>
+          <div class="weight-row-bar">
+            <div class="weight-progress">
+              <div class="weight-fill ${scoreClass(cat.score)}" style="width: ${cat.score}%"></div>
+            </div>
+            <span class="weight-score">${cat.score}/100</span>
+          </div>
+          <div class="weight-contribution">Contribution: <b>+${cat.contribution}</b> points</div>
+          <div class="weight-why">${htmlEscape(cat.why)}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderAiReadiness(aiReadiness) {
+      if (!aiReadiness) {
+        $('#aiReadinessGrid').innerHTML = '<div class="card"><div class="muted">No AI readiness data available.</div></div>';
+        return;
+      }
+
+      const grid = $('#aiReadinessGrid');
+      grid.innerHTML = '';
+
+      Object.entries(aiReadiness).forEach(([key, module]) => {
+        const info = AI_MODULE_EXPLANATIONS[key] || { title: key, icon: '🤖', tooltip: 'AI readiness module' };
+
+        const card = document.createElement('div');
+        card.className = 'card ai-module-card';
+
+        const score = module.score || 0;
+        const recommendations = module.recommendations || [];
+        const severity = getSeverity(recommendations.join(' '));
+
+        card.innerHTML = `
+          <h3>
+            ${info.icon} ${info.title}
+            <span class="info-icon" data-tooltip="${info.tooltip}">ⓘ</span>
+          </h3>
+          <div class="kv">
+            <b>Score</b> <span class="score ${scoreClass(score)}">${score}</span>
+          </div>
+          <div class="ai-module-metrics">
+            ${renderModuleMetrics(key, module)}
+          </div>
+          <div class="rec-list">
+            ${recommendations.slice(0, 3).map(rec => {
+              const recSeverity = getSeverity(rec);
+              const recCategory = getCategory(rec, key);
+              return `
+                <div class="rec-card-mini">
+                  <div class="rec-badges">
+                    <span class="severity-badge ${recSeverity}">${recSeverity}</span>
+                    <span class="category-badge ${recCategory}">${recCategory}</span>
+                  </div>
+                  <div class="rec-text">${htmlEscape(rec)}</div>
+                </div>
+              `;
+            }).join('')}
+            ${recommendations.length > 3 ? `<div class="muted">+${recommendations.length - 3} more recommendations</div>` : ''}
+          </div>
+        `;
+
+        grid.appendChild(card);
+      });
+    }
+
+    function renderModuleMetrics(key, module) {
+      // Render key metrics based on module type
+      const metrics = [];
+
+      if (module.answeredQuestions) metrics.push(`✅ ${module.answeredQuestions.length} questions answered`);
+      if (module.missingQuestions) metrics.push(`❌ ${module.missingQuestions.length} missing`);
+      if (module.hasWikipediaLink !== undefined) metrics.push(`Wikipedia: ${module.hasWikipediaLink ? '✅' : '❌'}`);
+      if (module.socialProfiles) metrics.push(`${module.socialProfiles.length} social profiles`);
+      if (module.roomCount) metrics.push(`${module.roomCount} room schemas`);
+      if (module.avgCompleteness) metrics.push(`${module.avgCompleteness}% complete`);
+      if (module.imagesInSchema) metrics.push(`${module.imagesInSchema} images in schema`);
+      if (module.totalHtmlImages) metrics.push(`${module.totalHtmlImages} HTML images`);
+      if (module.policiesInBoth) metrics.push(`${module.policiesInBoth.length} policies complete`);
+      if (module.contradictions) metrics.push(`${module.contradictions.length} contradictions`);
+      if (module.suggestedSchemas) metrics.push(`${module.suggestedSchemas.length} suggested types`);
+      if (module.openGraph) metrics.push(`OG: ${module.openGraph.completeness}%`);
+      if (module.internalLinks) metrics.push(`${module.internalLinks} internal links`);
+      if (module.stalenessIndicators) metrics.push(`${module.stalenessIndicators.length} staleness signals`);
+
+      return metrics.length ? `<div class="sub">${metrics.join(' • ')}</div>` : '';
     }
 
     function fillArea(prefix, obj, detailsBuilder){
@@ -298,14 +789,26 @@
       setScore(scoreEl, obj.score||0);
       detEl.innerHTML = detailsBuilder(obj);
       listInto(issuesEl, obj.issues||[], 'issue');
-      listInto(recsEl, obj.recommendations||[], 'rec');
+
+      // Enhanced recommendations with severity badges
+      recsEl.innerHTML = (obj.recommendations || []).map(rec => {
+        const text = rec.message || rec;
+        const severity = getSeverity(text);
+        const category = getCategory(text, prefix);
+        return `
+          <div class="rec-enhanced">
+            <span class="severity-badge ${severity}">${severity}</span>
+            <span class="category-badge ${category}">${category}</span>
+            <span class="rec-text">${htmlEscape(text)}</span>
+          </div>
+        `;
+      }).join('');
     }
 
     function renderSchemas(data){
       const wrap = $('#schemasWrap');
       wrap.innerHTML = '';
 
-      // Build a hash map for validation lookup by JSON string
       const vmap = new Map();
       (data.matched||[]).forEach(m => {
         const key = JSON.stringify(m.data);
@@ -348,12 +851,10 @@
             </div>
           `;
 
-          // toggle
           const head = item.querySelector('.schema-head');
           const body = item.querySelector('.schema-body');
           head.addEventListener('click', ()=>{ body.style.display = (body.style.display==='block'?'none':'block'); });
 
-          // copy
           const copyBtn = item.querySelector('.copy');
           copyBtn.addEventListener('click', (ev)=>{
             ev.stopPropagation();
@@ -374,8 +875,31 @@
     }
 
     function renderValidation(v){
-      const issues = (v.issues||[]).map(it => `<div class="issue">${htmlEscape(it.message||String(it))}${it.docs?` — <a class="docs" href="${it.docs}" target="_blank">docs</a>`:''}</div>`).join('');
-      const recs = (v.recommendations||[]).map(it => `<div class="rec">${htmlEscape(it.message||String(it))}${it.docs?` — <a class="docs" href="${it.docs}" target="_blank">docs</a>`:''}</div>`).join('');
+      const issues = (v.issues||[]).map(it => {
+        const severity = getSeverity(it.message || String(it));
+        return `
+          <div class="issue-enhanced">
+            <span class="severity-badge ${severity}">${severity}</span>
+            <span class="issue-text">${htmlEscape(it.message||String(it))}</span>
+            ${it.docs?` <a class="docs" href="${it.docs}" target="_blank">docs ⧉</a>`:''}
+          </div>
+        `;
+      }).join('');
+
+      const recs = (v.recommendations||[]).map(it => {
+        const text = it.message||String(it);
+        const severity = getSeverity(text);
+        const category = getCategory(text, 'schema');
+        return `
+          <div class="rec-enhanced">
+            <span class="severity-badge ${severity}">${severity}</span>
+            <span class="category-badge ${category}">${category}</span>
+            <span class="rec-text">${htmlEscape(text)}</span>
+            ${it.docs?` <a class="docs" href="${it.docs}" target="_blank">docs ⧉</a>`:''}
+          </div>
+        `;
+      }).join('');
+
       return `
         <div class="list">
           <div><b>Validation details</b></div>
