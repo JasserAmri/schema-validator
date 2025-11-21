@@ -26,6 +26,9 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
+// Trust proxy for Vercel deployment (fixes X-Forwarded-For warnings)
+app.set('trust proxy', 1);
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes default
