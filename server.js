@@ -930,9 +930,11 @@ async function renderPageWithJavaScript(url) {
       waitUntil: 'networkidle2',
       timeout: timeout
     });
+    console.log('[JS Render] Page loaded, waiting for dynamic content...');
 
-    // Wait additional time for dynamic content
-    await page.waitForTimeout(2000);
+    // Wait additional time for dynamic content (using Promise instead of deprecated waitForTimeout)
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.log('[JS Render] Dynamic content wait complete');
 
     // Extract final HTML with all JavaScript-generated content
     const html = await page.content();
