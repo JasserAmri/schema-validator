@@ -28,6 +28,15 @@ const { validateAiMetadata } = require('./modules/aiMetadataValidator');
 const { analyzeInternalLinkingDepth } = require('./modules/internalLinkingDepth');
 const { analyzeContentStaleness } = require('./modules/contentStaleness');
 
+// Utilities
+const TARGET_SCHEMAS = require('./constants/schemas');
+const { safeStr, cleanJsonLikeString } = require('./utils/stringUtils');
+const { isValidUrl, isAbsolute, absolutize } = require('./utils/urlUtils');
+const { isValidDate, isValidTime } = require('./utils/dateUtils');
+const { textFrom } = require('./utils/cheerioUtils');
+const { countSyllables, countWords, countSentences, fleschKincaidReadingEase } = require('./utils/readabilityUtils');
+const { normalizeType, normalizeSchemaObject, matchesTargetSchemas } = require('./utils/schemaUtils');
+
 // -------------------------------------
 // App setup
 // -------------------------------------
@@ -60,110 +69,8 @@ app.use('/api/', limiter);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // -------------------------------------
-// Constants / helpers
-// -------------------------------------
-const TARGET_SCHEMAS = [
-  'Hotel', 'LodgingBusiness', 'FAQPage', 'Organization', 'Review', 'AggregateRating',
-  'LocalBusiness', 'Place', 'Product', 'Service', 'JobPosting', 'Restaurant',
-  'Event', 'BusinessEvent', 'HowTo', 'Article', 'QAPage', 'WebSite', 'BreadcrumbList',
-  'VideoObject', 'ImageObject', 'ItemList', 'PostalAddress', 'GeoCoordinates', 'Offer'
-];
-
-function safeStr(x) {
-  return (typeof x === 'string') ? x : '';
-}
-
-function normalizeType(raw) {
-  if (!raw) return '';
-  if (Array.isArray(raw)) return raw.map(s => String(s)).join(',');
-  return String(raw);
-}
-
-function isValidUrl(value) {
-  try { new URL(value); return true; } catch { return false; }
-}
-
-function isValidDate(value) {
-  // ISO-ish date test
-  return /^\d{4}-\d{2}-\d{2}([Tt ][\d:.\-+Zz]+)?$/.test(String(value));
-}
-
-function isValidTime(value) {
-  const s = String(value);
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(s) || /^\d{2}:\d{2}:\d{2}$/.test(s);
-}
-
-function isAbsolute(url) {
-  return /^https?:\/\//i.test(String(url || ''));
-}
-
-function absolutize(url, base) {
-  try {
-    if (!url) return url;
-    const abs = new URL(url, base);
-    return abs.href;
-  } catch {
-    return url;
-  }
-}
-
-function textFrom($, el) {
-  return $(el).text().replace(/\s+/g, ' ').trim();
-}
-
-// Pure-JS Flesch-Kincaid helpers
-function countSyllables(word) {
-  const w = String(word || '').toLowerCase().replace(/[^a-z]/g, '');
-  if (!w) return 0;
-  if (w.length <= 3) return 1;
-  return (w
-    .replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '')
-    .replace(/^y/, '')
-    .match(/[aeiouy]{1,2}/g) || []).length;
-}
-function countWords(text) {
-  return (String(text || '').match(/[A-Za-zÀ-ÖØ-öø-ÿ]+/g) || []).length;
-}
-function countSentences(text) {
-  // heuristic: split on ., !, ?
-  const s = String(text || '').split(/[.!?]+/).filter(Boolean);
-  return Math.max(1, s.length);
-}
-function fleschKincaidReadingEase(text) {
-  const words = countWords(text);
-  const sentences = countSentences(text);
-  const syllables = (String(text || '').match(/[A-Za-zÀ-ÖØ-öø-ÿ]+/g) || [])
-    .reduce((sum, w) => sum + countSyllables(w), 0);
-  if (words === 0) return 0;
-  const ASL = words / sentences;       // average sentence length
-  const ASW = syllables / words;       // average syllables per word
-  // Flesch Reading Ease (higher is easier): 206.835 − 1.015×ASL − 84.6×ASW
-  const score = 206.835 - (1.015 * ASL) - (84.6 * ASW);
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
-
-// -------------------------------------
 // Extraction: JSON-LD, Microdata, RDFa
 // -------------------------------------
-function cleanJsonLikeString(s) {
-  let content = String(s || '').trim();
-  if (!content) return '';
-
-  // Remove HTML comments
-  content = content.replace(/<!--[\s\S]*?-->/g, '');
-
-  // Fix property names missing quotes: { foo: 1 } -> { "foo": 1 }
-  content = content.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
-
-  // Remove trailing commas before } or ]
-  content = content.replace(/,(\s*[}\]])/g, '$1');
-
-  // Remove trailing comma at end
-  content = content.replace(/,\s*$/, '');
-
-  return content;
-}
-
 function extractJsonLd($) {
   const out = [];
   $('script[type="application/ld+json"]').each((i, el) => {
@@ -205,19 +112,6 @@ function extractJsonLd($) {
 
   // Normalize @type to string, and absolutize URLs where safe
   return out.map(obj => normalizeSchemaObject(obj));
-}
-
-function normalizeSchemaObject(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
-  const clone = JSON.parse(JSON.stringify(obj));
-
-  // normalize @type to string (if array, join with comma for display/validation)
-  if (clone['@type']) clone['@type'] = normalizeType(clone['@type']);
-  if (!clone['@type'] && clone.type) {
-    clone['@type'] = normalizeType(clone.type);
-    delete clone.type;
-  }
-  return clone;
 }
 
 function extractMicrodata($, baseUrl) {
@@ -887,14 +781,6 @@ function checkDateFreshness(schema, path = '') {
   });
 
   return warnings;
-}
-
-function matchesTargetSchemas(schemaType) {
-  const t = String(schemaType || '');
-  return TARGET_SCHEMAS.some(target =>
-    t.toLowerCase().includes(target.toLowerCase()) ||
-    target.toLowerCase().includes(t.toLowerCase())
-  );
 }
 
 // -------------------------------------
