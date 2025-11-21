@@ -1,6 +1,8 @@
 // modules/contentContradictionDetector.js
 // Detects contradictions between schema values and visible content
 
+const { safeString } = require('../utils/safeString');
+
 /**
  * Extract numbers from text for comparison
  */
@@ -99,7 +101,7 @@ function detectContentContradictions(schemas, html) {
     if (schema.name) {
       analysis.checks.nameConsistency = 'checked';
 
-      const schemaName = schema.name.toLowerCase();
+      const schemaName = safeString(schema.name).toLowerCase();
       const schemaNameWords = schemaName.split(/\s+/).filter(w => w.length > 3);
 
       // Check if major words from schema name appear in content
@@ -130,7 +132,7 @@ function detectContentContradictions(schemas, html) {
       ].filter(Boolean);
 
       const addressPartsInContent = addressParts.filter(part =>
-        htmlLower.includes(part.toLowerCase())
+        htmlLower.includes(safeString(part).toLowerCase())
       );
 
       if (addressPartsInContent.length < addressParts.length * 0.5) {
@@ -148,7 +150,7 @@ function detectContentContradictions(schemas, html) {
     if (schema.telephone) {
       analysis.checks.phoneConsistency = 'checked';
 
-      const schemaPhone = schema.telephone.replace(/\D/g, '');
+      const schemaPhone = safeString(schema.telephone).replace(/\D/g, '');
       const phoneRegex = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
       const htmlPhones = html.match(phoneRegex) || [];
 
