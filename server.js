@@ -1628,6 +1628,17 @@ function richResultsEligibility(allSchemas, pageUrl) {
 // -------------------------------------
 // API Route
 // -------------------------------------
+// Diagnostic endpoint to check environment variables
+app.get('/api/debug-env', (req, res) => {
+  res.json({
+    ENABLE_JS_RENDERING: process.env.ENABLE_JS_RENDERING,
+    type: typeof process.env.ENABLE_JS_RENDERING,
+    length: process.env.ENABLE_JS_RENDERING?.length,
+    isTrue: process.env.ENABLE_JS_RENDERING === 'true',
+    allEnableFlags: Object.keys(process.env).filter(k => k.includes('ENABLE'))
+  });
+});
+
 app.post('/api/analyze', async (req, res) => {
   try {
     const { url } = req.body;
