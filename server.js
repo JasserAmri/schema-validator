@@ -10,6 +10,7 @@ const rateLimit = require('express-rate-limit');
 
 // Routes
 const analyzeRouter = require('./routes/analyze');
+const analyzeSiteRouter = require('./routes/analyzeSite');
 
 // -------------------------------------
 // App setup
@@ -56,8 +57,9 @@ app.get('/api/debug-env', (req, res) => {
   });
 });
 
-// Mount analyze router
+// Mount analyze routers
 app.use('/api', analyzeRouter);
+app.use('/api', analyzeSiteRouter);
 
 // -------------------------------------
 // Serve UI
