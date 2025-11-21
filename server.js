@@ -694,6 +694,180 @@ function validateSchema(schema, schemaType) {
   return validation;
 }
 
+// Schema.org official property vocabularies for common types
+const SCHEMA_ORG_PROPERTIES = {
+  Question: ['@context', '@type', '@id', 'acceptedAnswer', 'answerCount', 'author', 'dateCreated', 'dateModified', 'datePublished', 'name', 'text', 'suggestedAnswer', 'upvoteCount', 'downvoteCount'],
+  Answer: ['@context', '@type', '@id', 'text', 'author', 'dateCreated', 'dateModified', 'datePublished', 'upvoteCount', 'downvoteCount', 'url'],
+  FAQPage: ['@context', '@type', '@id', 'mainEntity', 'name', 'description', 'url', 'breadcrumb', 'inLanguage'],
+  Hotel: ['@context', '@type', '@id', 'name', 'description', 'image', 'address', 'telephone', 'email', 'url', 'priceRange', 'starRating', 'aggregateRating', 'amenityFeature', 'checkinTime', 'checkoutTime', 'petsAllowed', 'numberOfRooms', 'geo', 'sameAs'],
+  PostalAddress: ['@context', '@type', 'streetAddress', 'addressLocality', 'addressRegion', 'postalCode', 'addressCountry'],
+  Rating: ['@context', '@type', 'ratingValue', 'bestRating', 'worstRating', 'ratingCount', 'reviewCount'],
+  AggregateRating: ['@context', '@type', 'ratingValue', 'bestRating', 'worstRating', 'ratingCount', 'reviewCount'],
+  Review: ['@context', '@type', '@id', 'author', 'datePublished', 'reviewBody', 'reviewRating', 'itemReviewed'],
+  Organization: ['@context', '@type', '@id', 'name', 'url', 'logo', 'sameAs', 'contactPoint', 'address', 'telephone', 'email'],
+  Person: ['@context', '@type', '@id', 'name', 'url', 'image', 'sameAs', 'jobTitle', 'worksFor'],
+  BreadcrumbList: ['@context', '@type', 'itemListElement'],
+  ListItem: ['@context', '@type', 'position', 'name', 'item'],
+  WebPage: ['@context', '@type', '@id', 'name', 'url', 'description', 'inLanguage', 'isPartOf', 'breadcrumb', 'datePublished', 'dateModified'],
+  WebSite: ['@context', '@type', '@id', 'name', 'url', 'description', 'potentialAction'],
+  ImageObject: ['@context', '@type', '@id', 'url', 'width', 'height', 'caption', 'contentUrl'],
+  HowTo: ['@context', '@type', '@id', 'name', 'description', 'image', 'step', 'totalTime', 'tool', 'supply'],
+  HowToStep: ['@context', '@type', 'name', 'text', 'url', 'image', 'position'],
+  Place: ['@context', '@type', '@id', 'name', 'address', 'geo', 'url', 'telephone', 'image'],
+  GeoCoordinates: ['@context', '@type', 'latitude', 'longitude', 'elevation']
+};
+
+// Detect non-standard Schema.org properties
+function detectNonStandardProperties(schema, schemaType) {
+  if (process.env.ENABLE_NON_STANDARD_WARNINGS !== 'true') {
+    return [];
+  }
+
+  const warnings = [];
+  const officialProps = SCHEMA_ORG_PROPERTIES[schemaType] || [];
+
+  if (officialProps.length === 0) {
+    // Unknown type, skip validation
+    return warnings;
+  }
+
+  Object.keys(schema).forEach(prop => {
+    // Skip standard context/type/id props
+    if (['@context', '@type', '@id'].includes(prop)) return;
+
+    // Check if property exists in official vocabulary
+    if (!officialProps.includes(prop)) {
+      warnings.push({
+        property: prop,
+        message: `Non-standard property detected: "${prop}" is not in the official Schema.org vocabulary for ${schemaType}`,
+        type: 'non-standard',
+        severity: 'warning'
+      });
+    }
+
+    // Recursively check nested objects
+    const value = schema[prop];
+    if (value && typeof value === 'object' && !Array.isArray(value) && value['@type']) {
+      const nestedWarnings = detectNonStandardProperties(value, value['@type']);
+      warnings.push(...nestedWarnings);
+    } else if (Array.isArray(value)) {
+      value.forEach(item => {
+        if (item && typeof item === 'object' && item['@type']) {
+          const nestedWarnings = detectNonStandardProperties(item, item['@type']);
+          warnings.push(...nestedWarnings);
+        }
+      });
+    }
+  });
+
+  return warnings;
+}
+
+// Analyze HTML content in text fields
+function analyzeHtmlContent(schema, schemaType, path = '') {
+  if (process.env.ENABLE_HTML_CONTENT_ANALYSIS !== 'true') {
+    return [];
+  }
+
+  const warnings = [];
+  const htmlTagPattern = /<[^>]+>/g;
+  const textFields = ['text', 'name', 'description', 'reviewBody', 'headline', 'articleBody'];
+
+  Object.entries(schema).forEach(([key, value]) => {
+    const currentPath = path ? `${path}.${key}` : key;
+
+    // Check if this is a text field
+    if (textFields.includes(key) && typeof value === 'string') {
+      const htmlMatches = value.match(htmlTagPattern);
+      if (htmlMatches && htmlMatches.length > 0) {
+        const tags = [...new Set(htmlMatches.map(tag => tag.match(/<\/?(\w+)/)?.[1]).filter(Boolean))];
+        warnings.push({
+          property: currentPath,
+          message: `HTML tags found in text field "${key}": ${tags.join(', ')}. While technically valid, this may cause rendering issues in search results.`,
+          type: 'html-content',
+          severity: 'info',
+          tags: tags,
+          excerpt: value.substring(0, 100) + (value.length > 100 ? '...' : '')
+        });
+      }
+    }
+
+    // Recursively check nested objects
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const nestedWarnings = analyzeHtmlContent(value, schemaType, currentPath);
+      warnings.push(...nestedWarnings);
+    } else if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        if (item && typeof item === 'object') {
+          const nestedWarnings = analyzeHtmlContent(item, schemaType, `${currentPath}[${index}]`);
+          warnings.push(...nestedWarnings);
+        }
+      });
+    }
+  });
+
+  return warnings;
+}
+
+// Check date freshness (for dateModified, datePublished)
+function checkDateFreshness(schema, path = '') {
+  if (process.env.ENABLE_DATE_FRESHNESS_CHECK !== 'true') {
+    return [];
+  }
+
+  const warnings = [];
+  const dateFields = ['dateModified', 'datePublished', 'dateCreated'];
+  const now = new Date();
+  const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+  const twoYearsAgo = new Date(now.getFullYear() - 2, now.getMonth(), now.getDate());
+
+  Object.entries(schema).forEach(([key, value]) => {
+    const currentPath = path ? `${path}.${key}` : key;
+
+    if (dateFields.includes(key) && typeof value === 'string') {
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        const ageInDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+        if (date < twoYearsAgo) {
+          warnings.push({
+            property: currentPath,
+            message: `${key} is over 2 years old (${ageInDays} days). Very stale content may lose ranking in search results.`,
+            type: 'date-freshness',
+            severity: 'warning',
+            date: value,
+            ageInDays
+          });
+        } else if (date < oneYearAgo) {
+          warnings.push({
+            property: currentPath,
+            message: `${key} is over 1 year old (${ageInDays} days). Consider updating for better freshness signals.`,
+            type: 'date-freshness',
+            severity: 'info',
+            date: value,
+            ageInDays
+          });
+        }
+      }
+    }
+
+    // Recursively check nested objects
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const nestedWarnings = checkDateFreshness(value, currentPath);
+      warnings.push(...nestedWarnings);
+    } else if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        if (item && typeof item === 'object') {
+          const nestedWarnings = checkDateFreshness(item, `${currentPath}[${index}]`);
+          warnings.push(...nestedWarnings);
+        }
+      });
+    }
+  });
+
+  return warnings;
+}
+
 function matchesTargetSchemas(schemaType) {
   const t = String(schemaType || '');
   return TARGET_SCHEMAS.some(target =>
@@ -1376,18 +1550,38 @@ app.post('/api/analyze', async (req, res) => {
     let pageUrl;
     try { pageUrl = new URL(url).href; } catch { return res.status(400).json({ error: 'Invalid URL format' }); }
 
-    // Fetch HTML
+    // Fetch HTML with enhanced bot bypass
     const timeout = parseInt(process.env.TIMEOUT_PAGE || '15000');
     const maxContentLength = parseInt(process.env.MAX_CONTENT_LENGTH || '10485760');
+
+    // Enhanced headers for bot bypass (if enabled)
+    const enhancedBypass = process.env.ENABLE_ENHANCED_BOT_BYPASS === 'true';
+    const headers = enhancedBypass ? {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-site': 'none',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-user': '?1',
+      'sec-fetch-dest': 'document',
+      'upgrade-insecure-requests': '1',
+      'dnt': '1',
+      'cache-control': 'max-age=0'
+    } : {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.8'
+    };
+
     const response = await axios.get(pageUrl, {
       timeout,
       maxContentLength,
       maxBodyLength: maxContentLength,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.8'
-      },
+      headers,
       maxRedirects: 5
     });
     const finalUrl = response.request?.res?.responseUrl || pageUrl;
@@ -1427,6 +1621,43 @@ app.post('/api/analyze', async (req, res) => {
       if (schemaType && matchesTargetSchemas(schemaType)) {
         const primaryType = schemaType.split(',')[0].trim(); // if multiple, pick first for rules
         const validation = validateSchema(schema, primaryType);
+
+        // Detect non-standard properties
+        const nonStandardWarnings = detectNonStandardProperties(schema, primaryType);
+        if (nonStandardWarnings.length > 0) {
+          validation.nonStandardProperties = nonStandardWarnings;
+          validation.recommendations.push({
+            message: `Found ${nonStandardWarnings.length} non-standard property/properties. These may not be recognized by search engines.`,
+            type: 'non-standard-summary',
+            details: nonStandardWarnings
+          });
+        }
+
+        // Analyze HTML content in text fields
+        const htmlContentWarnings = analyzeHtmlContent(schema, primaryType);
+        if (htmlContentWarnings.length > 0) {
+          validation.htmlContentWarnings = htmlContentWarnings;
+          validation.recommendations.push({
+            message: `Found HTML tags in ${htmlContentWarnings.length} text field(s). Consider using plain text for better compatibility.`,
+            type: 'html-content-summary',
+            details: htmlContentWarnings
+          });
+        }
+
+        // Check date freshness
+        const dateFreshnessWarnings = checkDateFreshness(schema);
+        if (dateFreshnessWarnings.length > 0) {
+          validation.dateFreshnessWarnings = dateFreshnessWarnings;
+          const oldDates = dateFreshnessWarnings.filter(w => w.severity === 'warning').length;
+          if (oldDates > 0) {
+            validation.recommendations.push({
+              message: `Found ${oldDates} date(s) over 2 years old. Update content dates for better freshness signals.`,
+              type: 'date-freshness-summary',
+              details: dateFreshnessWarnings
+            });
+          }
+        }
+
         matched.push({
           type: schemaType,
           sourceIndex: index,
