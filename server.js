@@ -9,6 +9,7 @@ const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
+const puppeteer = require('puppeteer');
 
 // -------------------------------------
 // App setup
@@ -877,6 +878,87 @@ function matchesTargetSchemas(schemaType) {
 }
 
 // -------------------------------------
+// JavaScript Rendering (Puppeteer)
+// -------------------------------------
+async function renderPageWithJavaScript(url) {
+  if (process.env.ENABLE_JS_RENDERING !== 'true') {
+    return null;
+  }
+
+  let browser = null;
+  try {
+    const launchOptions = {
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu'
+      ]
+    };
+
+    // Use custom Chrome path if specified (required in Vercel)
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    browser = await puppeteer.launch(launchOptions);
+    const page = await browser.newPage();
+
+    // Set realistic viewport and user agent
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    // Set extra headers for bot bypass
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+    });
+
+    // Navigate and wait for network to be idle
+    const timeout = parseInt(process.env.TIMEOUT_JS_RENDER || '30000');
+    await page.goto(url, {
+      waitUntil: 'networkidle2',
+      timeout: timeout
+    });
+
+    // Wait additional time for dynamic content
+    await page.waitForTimeout(2000);
+
+    // Extract final HTML with all JavaScript-generated content
+    const html = await page.content();
+
+    await browser.close();
+
+    return {
+      html,
+      success: true,
+      method: 'puppeteer'
+    };
+
+  } catch (error) {
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
+
+    console.error('JavaScript rendering error:', error.message);
+
+    return {
+      html: null,
+      success: false,
+      method: 'puppeteer',
+      error: error.message
+    };
+  }
+}
+
+// -------------------------------------
 // Robots, LLMs, AI, OpenGraph, Sitemap
 // -------------------------------------
 async function analyzeRobotsTxt(url) {
@@ -1550,42 +1632,56 @@ app.post('/api/analyze', async (req, res) => {
     let pageUrl;
     try { pageUrl = new URL(url).href; } catch { return res.status(400).json({ error: 'Invalid URL format' }); }
 
-    // Fetch HTML with enhanced bot bypass
-    const timeout = parseInt(process.env.TIMEOUT_PAGE || '15000');
-    const maxContentLength = parseInt(process.env.MAX_CONTENT_LENGTH || '10485760');
+    // Try JavaScript rendering first if enabled
+    let html = null;
+    let finalUrl = pageUrl;
+    let renderMethod = 'axios';
 
-    // Enhanced headers for bot bypass (if enabled)
-    const enhancedBypass = process.env.ENABLE_ENHANCED_BOT_BYPASS === 'true';
-    const headers = enhancedBypass ? {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-      'sec-fetch-site': 'none',
-      'sec-fetch-mode': 'navigate',
-      'sec-fetch-user': '?1',
-      'sec-fetch-dest': 'document',
-      'upgrade-insecure-requests': '1',
-      'dnt': '1',
-      'cache-control': 'max-age=0'
-    } : {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.8'
-    };
+    const jsRenderResult = await renderPageWithJavaScript(pageUrl);
+    if (jsRenderResult && jsRenderResult.success) {
+      html = jsRenderResult.html;
+      finalUrl = pageUrl; // Puppeteer handles redirects internally
+      renderMethod = 'puppeteer';
+    } else {
+      // Fallback to axios with enhanced bot bypass
+      const timeout = parseInt(process.env.TIMEOUT_PAGE || '15000');
+      const maxContentLength = parseInt(process.env.MAX_CONTENT_LENGTH || '10485760');
 
-    const response = await axios.get(pageUrl, {
-      timeout,
-      maxContentLength,
-      maxBodyLength: maxContentLength,
-      headers,
-      maxRedirects: 5
-    });
-    const finalUrl = response.request?.res?.responseUrl || pageUrl;
-    const html = response.data;
+      // Enhanced headers for bot bypass (if enabled)
+      const enhancedBypass = process.env.ENABLE_ENHANCED_BOT_BYPASS === 'true';
+      const headers = enhancedBypass ? {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-site': 'none',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-user': '?1',
+        'sec-fetch-dest': 'document',
+        'upgrade-insecure-requests': '1',
+        'dnt': '1',
+        'cache-control': 'max-age=0'
+      } : {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.8'
+      };
+
+      const response = await axios.get(pageUrl, {
+        timeout,
+        maxContentLength,
+        maxBodyLength: maxContentLength,
+        headers,
+        maxRedirects: 5
+      });
+      finalUrl = response.request?.res?.responseUrl || pageUrl;
+      html = response.data;
+      renderMethod = 'axios';
+    }
+
     if (!html || typeof html !== 'string') return res.status(400).json({ error: 'Invalid HTML content.' });
 
     let $;
@@ -1676,6 +1772,7 @@ app.post('/api/analyze', async (req, res) => {
 
     return res.json({
       url: finalUrl,
+      renderMethod, // 'puppeteer' or 'axios'
       jsonLd,
       microdata,
       rdfa,
