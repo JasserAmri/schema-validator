@@ -926,19 +926,26 @@ async function renderPageWithJavaScript(url) {
 
     // Navigate and wait for network to be idle
     const timeout = parseInt(process.env.TIMEOUT_JS_RENDER || '30000');
+    console.log('[JS Render] Navigating to URL with timeout:', timeout);
+
     await page.goto(url, {
-      waitUntil: 'networkidle2',
+      waitUntil: ['load', 'networkidle0'],
       timeout: timeout
     });
     console.log('[JS Render] Page loaded, waiting for dynamic content...');
 
-    // Wait additional time for dynamic content (using Promise instead of deprecated waitForTimeout)
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait longer for dynamic content (3 seconds to ensure JS execution)
+    await new Promise(resolve => setTimeout(resolve, 3000));
     console.log('[JS Render] Dynamic content wait complete');
 
     // Extract final HTML with all JavaScript-generated content
     const html = await page.content();
     console.log('[JS Render] Successfully extracted HTML, length:', html.length);
+
+    // Check if HTML actually contains schemas
+    const hasJsonLd = html.includes('application/ld+json');
+    const hasSchema = html.includes('schema.org');
+    console.log('[JS Render] HTML contains JSON-LD:', hasJsonLd, 'Schema.org references:', hasSchema);
 
     await browser.close();
     console.log('[JS Render] Browser closed, rendering complete');
