@@ -911,6 +911,18 @@ async function renderPageWithJavaScript(url) {
     console.log('[JS Render] Browser launched successfully');
     const page = await browser.newPage();
 
+    // Capture console errors from the page
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        console.log('[JS Render] Page Console Error:', msg.text());
+      }
+    });
+
+    // Capture page errors
+    page.on('pageerror', error => {
+      console.log('[JS Render] Page JavaScript Error:', error.message);
+    });
+
     // Set realistic viewport and user agent
     await page.setViewport({ width: 1920, height: 1080 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -934,9 +946,27 @@ async function renderPageWithJavaScript(url) {
     });
     console.log('[JS Render] Page loaded, waiting for dynamic content...');
 
-    // Wait longer for dynamic content (3 seconds to ensure JS execution)
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Log page title to confirm we're on the right page
+    const pageTitle = await page.title();
+    console.log('[JS Render] Page title:', pageTitle);
+
+    // Try to wait for schema tags to appear (with timeout)
+    try {
+      await page.waitForSelector('script[type="application/ld+json"]', { timeout: 5000 });
+      console.log('[JS Render] Found schema script tags');
+    } catch (e) {
+      console.log('[JS Render] No schema script tags found after 5s, continuing anyway...');
+    }
+
+    // Wait longer for dynamic content (5 seconds for slower pages)
+    await new Promise(resolve => setTimeout(resolve, 5000));
     console.log('[JS Render] Dynamic content wait complete');
+
+    // Count schema tags before extraction
+    const schemaCount = await page.evaluate(() => {
+      return document.querySelectorAll('script[type="application/ld+json"]').length;
+    });
+    console.log('[JS Render] Schema script tags in page:', schemaCount);
 
     // Extract final HTML with all JavaScript-generated content
     const html = await page.content();
