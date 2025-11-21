@@ -882,21 +882,30 @@ function matchesTargetSchemas(schemaType) {
 // JavaScript Rendering (Puppeteer)
 // -------------------------------------
 async function renderPageWithJavaScript(url) {
+  console.log('[JS Render] ENABLE_JS_RENDERING =', process.env.ENABLE_JS_RENDERING);
+
   if (process.env.ENABLE_JS_RENDERING !== 'true') {
+    console.log('[JS Render] JavaScript rendering disabled');
     return null;
   }
 
+  console.log('[JS Render] Starting JavaScript rendering for:', url);
   let browser = null;
   try {
     // Use @sparticuz/chromium for Vercel serverless compatibility
+    const execPath = await chromium.executablePath();
+    console.log('[JS Render] Chromium executable path:', execPath);
+
     const launchOptions = {
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
+      executablePath: execPath,
       headless: chromium.headless,
     };
 
+    console.log('[JS Render] Launching browser with args:', launchOptions.args.slice(0, 5));
     browser = await puppeteer.launch(launchOptions);
+    console.log('[JS Render] Browser launched successfully');
     const page = await browser.newPage();
 
     // Set realistic viewport and user agent
@@ -924,8 +933,10 @@ async function renderPageWithJavaScript(url) {
 
     // Extract final HTML with all JavaScript-generated content
     const html = await page.content();
+    console.log('[JS Render] Successfully extracted HTML, length:', html.length);
 
     await browser.close();
+    console.log('[JS Render] Browser closed, rendering complete');
 
     return {
       html,
@@ -938,7 +949,8 @@ async function renderPageWithJavaScript(url) {
       await browser.close().catch(() => {});
     }
 
-    console.error('JavaScript rendering error:', error.message);
+    console.error('[JS Render] ERROR:', error.message);
+    console.error('[JS Render] ERROR Stack:', error.stack);
 
     return {
       html: null,
