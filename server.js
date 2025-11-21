@@ -11,6 +11,7 @@ const path = require('path');
 const rateLimit = require('express-rate-limit');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
+const universalExtractor = require('./universalSchemaExtractor');
 
 // -------------------------------------
 // App setup
@@ -911,6 +912,18 @@ async function renderPageWithJavaScript(url) {
     console.log('[JS Render] Browser launched successfully');
     const page = await browser.newPage();
 
+    // Capture console errors from the page
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        console.log('[JS Render] Page Console Error:', msg.text());
+      }
+    });
+
+    // Capture page errors
+    page.on('pageerror', error => {
+      console.log('[JS Render] Page JavaScript Error:', error.message);
+    });
+
     // Set realistic viewport and user agent
     await page.setViewport({ width: 1920, height: 1080 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -934,9 +947,27 @@ async function renderPageWithJavaScript(url) {
     });
     console.log('[JS Render] Page loaded, waiting for dynamic content...');
 
-    // Wait longer for dynamic content (3 seconds to ensure JS execution)
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Log page title to confirm we're on the right page
+    const pageTitle = await page.title();
+    console.log('[JS Render] Page title:', pageTitle);
+
+    // Try to wait for schema tags to appear (with timeout)
+    try {
+      await page.waitForSelector('script[type="application/ld+json"]', { timeout: 5000 });
+      console.log('[JS Render] Found schema script tags');
+    } catch (e) {
+      console.log('[JS Render] No schema script tags found after 5s, continuing anyway...');
+    }
+
+    // Wait longer for dynamic content (5 seconds for slower pages)
+    await new Promise(resolve => setTimeout(resolve, 5000));
     console.log('[JS Render] Dynamic content wait complete');
+
+    // Count schema tags before extraction
+    const schemaCount = await page.evaluate(() => {
+      return document.querySelectorAll('script[type="application/ld+json"]').length;
+    });
+    console.log('[JS Render] Schema script tags in page:', schemaCount);
 
     // Extract final HTML with all JavaScript-generated content
     const html = await page.content();
@@ -947,13 +978,20 @@ async function renderPageWithJavaScript(url) {
     const hasSchema = html.includes('schema.org');
     console.log('[JS Render] HTML contains JSON-LD:', hasJsonLd, 'Schema.org references:', hasSchema);
 
+    // **UNIVERSAL SCHEMA EXTRACTION** - Extract all schemas using advanced methods
+    console.log('[JS Render] Starting universal schema extraction...');
+    const extractedSchemas = await universalExtractor.extractFromPuppeteerPage(page);
+    const normalizedSchemas = universalExtractor.normalizeSchemaResults(extractedSchemas);
+    console.log('[JS Render] Universal extraction complete. Found schemas:', normalizedSchemas.length);
+
     await browser.close();
     console.log('[JS Render] Browser closed, rendering complete');
 
     return {
       html,
       success: true,
-      method: 'puppeteer'
+      method: 'puppeteer',
+      extractedSchemas: normalizedSchemas  // Add extracted schemas to response
     };
 
   } catch (error) {
@@ -1662,12 +1700,18 @@ app.post('/api/analyze', async (req, res) => {
     let html = null;
     let finalUrl = pageUrl;
     let renderMethod = 'axios';
+    let universallyExtractedSchemas = [];  // Schemas extracted by universal extractor
 
     const jsRenderResult = await renderPageWithJavaScript(pageUrl);
     if (jsRenderResult && jsRenderResult.success) {
       html = jsRenderResult.html;
       finalUrl = pageUrl; // Puppeteer handles redirects internally
       renderMethod = 'puppeteer';
+      // Use schemas extracted by universal extractor from Puppeteer
+      if (jsRenderResult.extractedSchemas && jsRenderResult.extractedSchemas.length > 0) {
+        universallyExtractedSchemas = jsRenderResult.extractedSchemas;
+        console.log('[Analyze] Using universally extracted schemas from Puppeteer:', universallyExtractedSchemas.length);
+      }
     } else {
       // Fallback to axios with enhanced bot bypass
       const timeout = parseInt(process.env.TIMEOUT_PAGE || '15000');
@@ -1713,13 +1757,38 @@ app.post('/api/analyze', async (req, res) => {
     let $;
     try { $ = cheerio.load(html); } catch { return res.status(400).json({ error: 'Unable to parse HTML.' }); }
 
-    // Extract schemas
-    const jsonLd = extractJsonLd($);
+    // Extract schemas using multiple methods
+    let jsonLd = [];
+
+    // Priority 1: Use universally extracted schemas from Puppeteer (most reliable)
+    if (universallyExtractedSchemas.length > 0) {
+      jsonLd = universallyExtractedSchemas;
+      console.log('[Analyze] Using universal extraction results');
+    }
+
+    // Priority 2: If no Puppeteer schemas, use universal extraction on HTML
+    if (jsonLd.length === 0) {
+      const universalResults = universalExtractor.extractFromCheerioHtml(html);
+      const normalized = universalExtractor.normalizeSchemaResults(universalResults);
+      if (normalized.length > 0) {
+        jsonLd = normalized;
+        console.log('[Analyze] Using universal extraction from HTML:', jsonLd.length);
+      }
+    }
+
+    // Priority 3: Fallback to traditional extraction
+    if (jsonLd.length === 0) {
+      jsonLd = extractJsonLd($);
+      console.log('[Analyze] Using traditional JSON-LD extraction:', jsonLd.length);
+    }
+
+    // Always extract microdata and RDFa as supplementary data
     const microdata = extractMicrodata($, finalUrl);
     const rdfa = extractRdfa($, finalUrl);
 
     // Merge all schemas for cross-analyses
     const allSchemas = [...jsonLd, ...microdata, ...rdfa];
+    console.log('[Analyze] Total schemas (JSON-LD + Microdata + RDFa):', allSchemas.length);
 
     // Analyses
     const robotsAnalysis = await analyzeRobotsTxt(finalUrl);
