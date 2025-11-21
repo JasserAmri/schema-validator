@@ -45,6 +45,34 @@ router.post('/analyze-site', async (req, res) => {
       });
     }
 
+    // Smart filtering: Skip language variations to reduce processing time
+    const languagePatterns = ['/fr/', '/es/', '/br/', '/de/', '/it/', '/pt/', '/ja/', '/zh/', '/ru/'];
+    const originalCount = classifiedPages.length;
+    classifiedPages = classifiedPages.filter(page => {
+      const urlLower = page.url.toLowerCase();
+      // Keep homepage even if it has a language code
+      if (page.pageType === 'homepage') return true;
+      // Skip if URL contains language pattern
+      return !languagePatterns.some(pattern => urlLower.includes(pattern));
+    });
+
+    if (classifiedPages.length < originalCount) {
+      console.log(`[Analyze Site] Filtered out ${originalCount - classifiedPages.length} language variation pages`);
+    }
+
+    // Hard limit for Vercel free tier: 5 pages maximum
+    const HARD_LIMIT = 5;
+    if (classifiedPages.length > HARD_LIMIT) {
+      console.log(`[Analyze Site] Limiting to ${HARD_LIMIT} pages (from ${classifiedPages.length}) for performance`);
+      // Prioritize: homepage > faq > rooms > others
+      classifiedPages = classifiedPages
+        .sort((a, b) => {
+          const priority = { homepage: 0, faq: 1, rooms: 2, location: 3, about: 4 };
+          return (priority[a.pageType] || 99) - (priority[b.pageType] || 99);
+        })
+        .slice(0, HARD_LIMIT);
+    }
+
     console.log(`[Analyze Site] Starting analysis of ${classifiedPages.length} pages`);
     console.log('[Analyze Site] Page types:', classifiedPages.map(p => `${p.pageType} (${p.url})`).join(', '));
 
@@ -56,8 +84,13 @@ router.post('/analyze-site', async (req, res) => {
     result.autoDiscovery = autoDiscover;
     result.timestamp = new Date().toISOString();
 
-    console.log(`[Analyze Site] Analysis complete. Overall score: ${result.aggregatedScores.overall}`);
-    console.log(`[Analyze Site] Cross-page issues: ${result.crossPageIssues.length}`);
+    // Add warnings if pages were skipped
+    if (originalCount > classifiedPages.length) {
+      result.warning = `Analyzed ${classifiedPages.length} of ${originalCount} pages. Skipped ${originalCount - classifiedPages.length} language variations and/or applied 5-page limit for performance.`;
+    }
+
+    console.log(`[Analyze Site] Analysis complete. Overall score: ${result.aggregateScores?.overall || 0}`);
+    console.log(`[Analyze Site] Cross-page issues: ${result.crossPageContradictions?.length || 0}`);
 
     return res.json(result);
 

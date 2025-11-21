@@ -70,6 +70,7 @@
       <!-- Site-Wide Summary -->
       <div class="site-summary-card">
         <h2>🌐 Site-Wide Analysis Summary</h2>
+        <div id="partialWarning" class="warning-banner hidden"></div>
         <div class="grid cols-3">
           <div class="card">
             <h3>Aggregated Scores</h3>
@@ -649,6 +650,15 @@
     function renderMultiPageResults(data) {
       // Show results section
       multiPageResults.classList.remove('hidden');
+
+      // Show warning if pages were skipped
+      const warningBanner = $('#partialWarning');
+      if (data.warning) {
+        warningBanner.textContent = '⚠️ ' + data.warning;
+        warningBanner.classList.remove('hidden');
+      } else {
+        warningBanner.classList.add('hidden');
+      }
 
       // Render site-wide summary
       const { aggregateScores, crawledPages, crossPageContradictions } = data;
