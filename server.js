@@ -13,6 +13,21 @@ const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
 const universalExtractor = require('./universalSchemaExtractor');
 
+// AI-readiness modules
+const { analyzeLlmQueryAnswerability } = require('./modules/llmQueryAnswerability');
+const { analyzeEntityClarity } = require('./modules/entityClarity');
+const { analyzeLocalRelevanceSignals } = require('./modules/localRelevanceSignals');
+const { analyzeRoomSchemaCompleteness } = require('./modules/roomSchemaCompleteness');
+const { analyzeImageAiReadiness } = require('./modules/imageAiReadiness');
+const { analyzePolicyCompleteness } = require('./modules/policyCompleteness');
+const { detectContentContradictions } = require('./modules/contentContradictionDetector');
+const { analyzeJsContentWarnings } = require('./modules/jsContentWarnings');
+const { detectAiReadySummaries } = require('./modules/summaryDetector');
+const { suggestMissingSchemas } = require('./modules/schemaSuggestions');
+const { validateAiMetadata } = require('./modules/aiMetadataValidator');
+const { analyzeInternalLinkingDepth } = require('./modules/internalLinkingDepth');
+const { analyzeContentStaleness } = require('./modules/contentStaleness');
+
 // -------------------------------------
 // App setup
 // -------------------------------------
@@ -1865,6 +1880,27 @@ app.post('/api/analyze', async (req, res) => {
     const schemaCount = matched.length;
     const averageValidationScore = schemaCount ? Math.round(totalValidationScore / schemaCount) : 0;
 
+    // AI-readiness analysis
+    console.log('[Analyze] Running AI-readiness modules...');
+    const llmQueryAnswerability = analyzeLlmQueryAnswerability(html, allSchemas);
+    const entityClarity = analyzeEntityClarity(allSchemas);
+    const localRelevanceSignals = analyzeLocalRelevanceSignals(allSchemas, html);
+    const roomSchemaCompleteness = analyzeRoomSchemaCompleteness(allSchemas);
+    const imageAiReadiness = analyzeImageAiReadiness(allSchemas, html);
+    const policyCompleteness = analyzePolicyCompleteness(allSchemas, html);
+    const contentContradictions = detectContentContradictions(allSchemas, html);
+    const jsContentWarnings = analyzeJsContentWarnings(
+      renderMethod === 'axios' ? html : null,
+      renderMethod === 'puppeteer' ? html : null,
+      renderMethod
+    );
+    const aiReadySummaries = detectAiReadySummaries(allSchemas, html);
+    const missingSchemas = suggestMissingSchemas(allSchemas, html);
+    const aiMetadata = validateAiMetadata(html);
+    const internalLinking = analyzeInternalLinkingDepth(html, pageUrl);
+    const contentStaleness = analyzeContentStaleness(html, allSchemas);
+    console.log('[Analyze] AI-readiness modules completed');
+
     return res.json({
       url: finalUrl,
       renderMethod, // 'puppeteer' or 'axios'
@@ -1892,7 +1928,23 @@ app.post('/api/analyze', async (req, res) => {
       metaConsistency,
       canonicalOgAlignment,
       crawlability,
-      richEligibility
+      richEligibility,
+      // AI-readiness analysis
+      aiReadiness: {
+        llmQueryAnswerability,
+        entityClarity,
+        localRelevanceSignals,
+        roomSchemaCompleteness,
+        imageAiReadiness,
+        policyCompleteness,
+        contentContradictions,
+        jsContentWarnings,
+        aiReadySummaries,
+        missingSchemas,
+        aiMetadata,
+        internalLinking,
+        contentStaleness
+      }
     });
   } catch (error) {
     console.error('API Analysis error:', error);
