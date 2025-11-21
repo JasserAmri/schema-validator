@@ -11,6 +11,7 @@ const path = require('path');
 const rateLimit = require('express-rate-limit');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
+const universalExtractor = require('./universalSchemaExtractor');
 
 // -------------------------------------
 // App setup
@@ -977,13 +978,20 @@ async function renderPageWithJavaScript(url) {
     const hasSchema = html.includes('schema.org');
     console.log('[JS Render] HTML contains JSON-LD:', hasJsonLd, 'Schema.org references:', hasSchema);
 
+    // **UNIVERSAL SCHEMA EXTRACTION** - Extract all schemas using advanced methods
+    console.log('[JS Render] Starting universal schema extraction...');
+    const extractedSchemas = await universalExtractor.extractFromPuppeteerPage(page);
+    const normalizedSchemas = universalExtractor.normalizeSchemaResults(extractedSchemas);
+    console.log('[JS Render] Universal extraction complete. Found schemas:', normalizedSchemas.length);
+
     await browser.close();
     console.log('[JS Render] Browser closed, rendering complete');
 
     return {
       html,
       success: true,
-      method: 'puppeteer'
+      method: 'puppeteer',
+      extractedSchemas: normalizedSchemas  // Add extracted schemas to response
     };
 
   } catch (error) {
@@ -1692,12 +1700,18 @@ app.post('/api/analyze', async (req, res) => {
     let html = null;
     let finalUrl = pageUrl;
     let renderMethod = 'axios';
+    let universallyExtractedSchemas = [];  // Schemas extracted by universal extractor
 
     const jsRenderResult = await renderPageWithJavaScript(pageUrl);
     if (jsRenderResult && jsRenderResult.success) {
       html = jsRenderResult.html;
       finalUrl = pageUrl; // Puppeteer handles redirects internally
       renderMethod = 'puppeteer';
+      // Use schemas extracted by universal extractor from Puppeteer
+      if (jsRenderResult.extractedSchemas && jsRenderResult.extractedSchemas.length > 0) {
+        universallyExtractedSchemas = jsRenderResult.extractedSchemas;
+        console.log('[Analyze] Using universally extracted schemas from Puppeteer:', universallyExtractedSchemas.length);
+      }
     } else {
       // Fallback to axios with enhanced bot bypass
       const timeout = parseInt(process.env.TIMEOUT_PAGE || '15000');
@@ -1743,13 +1757,38 @@ app.post('/api/analyze', async (req, res) => {
     let $;
     try { $ = cheerio.load(html); } catch { return res.status(400).json({ error: 'Unable to parse HTML.' }); }
 
-    // Extract schemas
-    const jsonLd = extractJsonLd($);
+    // Extract schemas using multiple methods
+    let jsonLd = [];
+
+    // Priority 1: Use universally extracted schemas from Puppeteer (most reliable)
+    if (universallyExtractedSchemas.length > 0) {
+      jsonLd = universallyExtractedSchemas;
+      console.log('[Analyze] Using universal extraction results');
+    }
+
+    // Priority 2: If no Puppeteer schemas, use universal extraction on HTML
+    if (jsonLd.length === 0) {
+      const universalResults = universalExtractor.extractFromCheerioHtml(html);
+      const normalized = universalExtractor.normalizeSchemaResults(universalResults);
+      if (normalized.length > 0) {
+        jsonLd = normalized;
+        console.log('[Analyze] Using universal extraction from HTML:', jsonLd.length);
+      }
+    }
+
+    // Priority 3: Fallback to traditional extraction
+    if (jsonLd.length === 0) {
+      jsonLd = extractJsonLd($);
+      console.log('[Analyze] Using traditional JSON-LD extraction:', jsonLd.length);
+    }
+
+    // Always extract microdata and RDFa as supplementary data
     const microdata = extractMicrodata($, finalUrl);
     const rdfa = extractRdfa($, finalUrl);
 
     // Merge all schemas for cross-analyses
     const allSchemas = [...jsonLd, ...microdata, ...rdfa];
+    console.log('[Analyze] Total schemas (JSON-LD + Microdata + RDFa):', allSchemas.length);
 
     // Analyses
     const robotsAnalysis = await analyzeRobotsTxt(finalUrl);
