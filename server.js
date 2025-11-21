@@ -9,7 +9,8 @@ const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 // -------------------------------------
 // App setup
@@ -887,23 +888,13 @@ async function renderPageWithJavaScript(url) {
 
   let browser = null;
   try {
+    // Use @sparticuz/chromium for Vercel serverless compatibility
     const launchOptions = {
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu'
-      ]
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
     };
-
-    // Use custom Chrome path if specified (required in Vercel)
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    }
 
     browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
