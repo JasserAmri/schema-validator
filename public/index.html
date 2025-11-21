@@ -19,13 +19,87 @@
       <small class="muted">AEO / GEO / Schema.org / OpenGraph / robots / llms / ai</small>
     </div>
 
-    <div class="input-card">
+    <!-- Mode Toggle -->
+    <div class="mode-toggle">
+      <button id="singlePageMode" class="mode-btn active">📄 Single Page</button>
+      <button id="multiPageMode" class="mode-btn">🌐 Multi-Page Site</button>
+    </div>
+
+    <!-- Single Page Input (default) -->
+    <div id="singlePageInput" class="input-card">
       <div class="row">
         <input id="urlInput" type="url" placeholder="Enter a URL e.g. https://example.com/page" />
         <button id="analyzeBtn">Analyze</button>
       </div>
       <div id="loading" class="muted">Analyzing…</div>
       <div id="error" class="muted"></div>
+    </div>
+
+    <!-- Multi-Page Input (hidden by default) -->
+    <div id="multiPageInput" class="input-card hidden">
+      <div class="multi-page-options">
+        <label>
+          <input type="radio" name="multiMode" value="auto" checked />
+          <span>🔍 Auto-discover pages (from sitemap or homepage)</span>
+        </label>
+        <label>
+          <input type="radio" name="multiMode" value="manual" />
+          <span>📝 Enter URLs manually (one per line)</span>
+        </label>
+      </div>
+
+      <div id="autoDiscoverSection">
+        <div class="row">
+          <input id="baseUrlInput" type="url" placeholder="Enter base URL e.g. https://example.com" />
+          <input id="maxPagesInput" type="number" min="1" max="20" value="5" placeholder="Max pages" style="width: 100px;" />
+          <button id="analyzeSiteBtn">Analyze Site</button>
+        </div>
+      </div>
+
+      <div id="manualUrlSection" class="hidden">
+        <textarea id="urlsTextarea" placeholder="Enter URLs (one per line)&#10;https://example.com/&#10;https://example.com/faq&#10;https://example.com/contact" rows="5"></textarea>
+        <button id="analyzeMultiBtn">Analyze Pages</button>
+      </div>
+
+      <div id="multiLoading" class="muted">Analyzing multiple pages…</div>
+      <div id="multiError" class="muted"></div>
+    </div>
+
+    <!-- Multi-Page Results Section (hidden by default) -->
+    <div id="multiPageResults" class="hidden">
+      <!-- Site-Wide Summary -->
+      <div class="site-summary-card">
+        <h2>🌐 Site-Wide Analysis Summary</h2>
+        <div class="grid cols-3">
+          <div class="card">
+            <h3>Aggregated Scores</h3>
+            <div class="kv">
+              <div><b>Overall</b> <span id="siteOverall" class="score">0</span></div>
+              <div><b>Schema Quality</b> <span id="siteSchemaQuality" class="score">0</span></div>
+              <div><b>AI Readiness</b> <span id="siteAiReadiness" class="score">0</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Pages Analyzed</h3>
+            <div class="kv">
+              <div><b>Total Pages</b> <span id="siteTotalPages">0</span></div>
+              <div><b>Successful</b> <span id="siteSuccessPages">0</span></div>
+              <div><b>Failed</b> <span id="siteFailedPages">0</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Cross-Page Issues</h3>
+            <div id="crossPageIssues" class="list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-Page Results -->
+      <div class="section-title-bar">
+        <h2>📄 Individual Page Results</h2>
+        <button id="expandAllPages" class="expand-all-btn">Expand All ▼</button>
+      </div>
+      <div id="perPageResults" class="per-page-grid"></div>
     </div>
 
     <!-- Sticky Summary Header (shows on scroll) -->
@@ -456,6 +530,332 @@
 
     analyzeBtn.addEventListener('click', analyze);
     urlInput.addEventListener('keypress', e => { if (e.key === 'Enter') analyze(); });
+
+    // Multi-page mode switching
+    const singlePageModeBtn = $('#singlePageMode');
+    const multiPageModeBtn = $('#multiPageMode');
+    const singlePageInput = $('#singlePageInput');
+    const multiPageInput = $('#multiPageInput');
+    const multiPageResults = $('#multiPageResults');
+    const tabsContainer = $('#tabsContainer');
+    const tabContent = $('#tabContent');
+
+    singlePageModeBtn.addEventListener('click', () => {
+      singlePageModeBtn.classList.add('active');
+      multiPageModeBtn.classList.remove('active');
+      singlePageInput.classList.remove('hidden');
+      multiPageInput.classList.add('hidden');
+      multiPageResults.classList.add('hidden');
+      tabsContainer.classList.remove('hidden');
+      tabContent.classList.remove('hidden');
+    });
+
+    multiPageModeBtn.addEventListener('click', () => {
+      multiPageModeBtn.classList.add('active');
+      singlePageModeBtn.classList.remove('active');
+      multiPageInput.classList.remove('hidden');
+      singlePageInput.classList.add('hidden');
+      tabsContainer.classList.add('hidden');
+      tabContent.classList.add('hidden');
+      $('#overallScoreCard').classList.add('hidden');
+    });
+
+    // Multi-page input mode switching
+    const multiModeRadios = document.querySelectorAll('input[name="multiMode"]');
+    const autoDiscoverSection = $('#autoDiscoverSection');
+    const manualUrlSection = $('#manualUrlSection');
+
+    multiModeRadios.forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        if (e.target.value === 'auto') {
+          autoDiscoverSection.classList.remove('hidden');
+          manualUrlSection.classList.add('hidden');
+        } else {
+          autoDiscoverSection.classList.add('hidden');
+          manualUrlSection.classList.remove('hidden');
+        }
+      });
+    });
+
+    // Multi-page analysis handlers
+    const analyzeSiteBtn = $('#analyzeSiteBtn');
+    const analyzeMultiBtn = $('#analyzeMultiBtn');
+    const multiLoading = $('#multiLoading');
+    const multiError = $('#multiError');
+
+    analyzeSiteBtn.addEventListener('click', () => analyzeMultiPage('auto'));
+    analyzeMultiBtn.addEventListener('click', () => analyzeMultiPage('manual'));
+
+    async function analyzeMultiPage(mode) {
+      multiError.textContent = '';
+      multiLoading.style.display = 'block';
+
+      const btnToDisable = mode === 'auto' ? analyzeSiteBtn : analyzeMultiBtn;
+      btnToDisable.disabled = true;
+
+      try {
+        let requestBody = {};
+
+        if (mode === 'auto') {
+          const baseUrl = $('#baseUrlInput').value.trim();
+          const maxPages = parseInt($('#maxPagesInput').value) || 5;
+
+          if (!baseUrl) {
+            multiError.textContent = 'Please enter a base URL.';
+            return;
+          }
+
+          requestBody = { url: baseUrl, maxPages, autoDiscover: true };
+        } else {
+          const urlsText = $('#urlsTextarea').value.trim();
+          if (!urlsText) {
+            multiError.textContent = 'Please enter at least one URL.';
+            return;
+          }
+
+          const urls = urlsText.split('\n')
+            .map(u => u.trim())
+            .filter(u => u.length > 0);
+
+          if (urls.length === 0) {
+            multiError.textContent = 'Please enter at least one valid URL.';
+            return;
+          }
+
+          requestBody = { urls };
+        }
+
+        const response = await fetch('/api/analyze-site', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Multi-page analysis failed');
+        }
+
+        renderMultiPageResults(data);
+      } catch (err) {
+        multiError.textContent = err.message || 'Something went wrong.';
+      } finally {
+        multiLoading.style.display = 'none';
+        btnToDisable.disabled = false;
+      }
+    }
+
+    function renderMultiPageResults(data) {
+      // Show results section
+      multiPageResults.classList.remove('hidden');
+
+      // Render site-wide summary
+      const { aggregateScores, crawledPages, crossPageContradictions } = data;
+
+      if (aggregateScores) {
+        setScore($('#siteOverall'), Math.round(aggregateScores.overall || 0));
+        setScore($('#siteSchemaQuality'), Math.round(aggregateScores.schemaQuality || 0));
+        setScore($('#siteAiReadiness'), Math.round(aggregateScores.aiReadiness || 0));
+      }
+
+      // Pages analyzed stats
+      const totalPages = crawledPages?.length || 0;
+      const successPages = crawledPages?.filter(p => p.success).length || 0;
+      const failedPages = totalPages - successPages;
+
+      $('#siteTotalPages').textContent = totalPages;
+      $('#siteSuccessPages').textContent = successPages;
+      $('#siteFailedPages').textContent = failedPages;
+
+      // Cross-page contradictions
+      const crossPageIssuesEl = $('#crossPageIssues');
+      if (crossPageContradictions && crossPageContradictions.length > 0) {
+        crossPageIssuesEl.innerHTML = crossPageContradictions.map(issue => `
+          <div class="issue-enhanced">
+            <span class="severity-badge ${issue.severity || 'important'}">${issue.severity || 'warning'}</span>
+            <span class="issue-text">${htmlEscape(issue.message)}</span>
+          </div>
+        `).join('');
+      } else {
+        crossPageIssuesEl.innerHTML = '<div class="rec">✅ No cross-page contradictions detected.</div>';
+      }
+
+      // Render per-page results
+      renderPerPageResults(crawledPages || []);
+
+      // Scroll to results
+      multiPageResults.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function renderPerPageResults(pages) {
+      const perPageResults = $('#perPageResults');
+      perPageResults.innerHTML = '';
+
+      if (pages.length === 0) {
+        perPageResults.innerHTML = '<div class="card"><div class="muted">No pages analyzed.</div></div>';
+        return;
+      }
+
+      pages.forEach((page, index) => {
+        const card = document.createElement('div');
+        card.className = 'page-result-card';
+
+        if (!page.success) {
+          card.innerHTML = `
+            <div class="page-result-header failed">
+              <div class="page-result-title">
+                <span class="page-number">#${index + 1}</span>
+                <span class="page-url">${htmlEscape(page.url)}</span>
+                <span class="badge no">Failed</span>
+              </div>
+            </div>
+            <div class="page-result-body">
+              <div class="error">${htmlEscape(page.error || 'Unknown error')}</div>
+            </div>
+          `;
+          perPageResults.appendChild(card);
+          return;
+        }
+
+        const pageData = page.pageAnalysis || {};
+        const pageType = page.pageType || 'page';
+        const weight = page.weight ? Math.round(page.weight * 100) : 10;
+
+        // Calculate page score
+        const validation = pageData.validation || {};
+        const aiReadiness = pageData.aiReadiness || {};
+        const pageScore = validation.averageScore || 0;
+
+        // Count issues
+        const totalIssues = Object.values(pageData).reduce((count, module) => {
+          if (module && module.issues) {
+            return count + module.issues.length;
+          }
+          return count;
+        }, 0);
+
+        card.innerHTML = `
+          <div class="page-result-header">
+            <div class="page-result-title">
+              <span class="page-number">#${index + 1}</span>
+              <span class="page-url">${htmlEscape(page.url)}</span>
+              <span class="badge ok">Success</span>
+              <span class="page-type-badge">${htmlEscape(pageType)}</span>
+              <span class="weight-badge">Weight: ${weight}%</span>
+            </div>
+            <div class="page-result-scores">
+              <span class="page-score">Score: <span class="score ${scoreClass(pageScore)}">${pageScore}</span></span>
+              <span class="page-issues">${totalIssues} issues</span>
+            </div>
+          </div>
+          <div class="page-result-body" style="display: none;">
+            ${renderPageSummary(pageData)}
+          </div>
+        `;
+
+        const header = card.querySelector('.page-result-header');
+        const body = card.querySelector('.page-result-body');
+
+        header.addEventListener('click', () => {
+          const isOpen = body.style.display === 'block';
+          body.style.display = isOpen ? 'none' : 'block';
+          header.classList.toggle('expanded', !isOpen);
+        });
+
+        perPageResults.appendChild(card);
+      });
+    }
+
+    function renderPageSummary(pageData) {
+      const validation = pageData.validation || {};
+      const aiReadiness = pageData.aiReadiness || {};
+      const schemaCount = validation.schemaCount || 0;
+      const aiModuleCount = Object.keys(aiReadiness).length;
+
+      let summaryHtml = `
+        <div class="page-summary-grid">
+          <div class="page-summary-section">
+            <h4>📋 Schemas</h4>
+            <div class="kv">
+              <div><b>Count</b> ${schemaCount}</div>
+              <div><b>Avg Score</b> <span class="score ${scoreClass(validation.averageScore || 0)}">${validation.averageScore || 0}</span></div>
+            </div>
+          </div>
+
+          <div class="page-summary-section">
+            <h4>🤖 AI Readiness</h4>
+            <div class="kv">
+              <div><b>Modules</b> ${aiModuleCount}</div>
+            </div>
+          </div>
+
+          <div class="page-summary-section">
+            <h4>🔍 SEO</h4>
+            <div class="kv">
+              <div><b>Robots</b> <span class="score ${scoreClass(pageData.robotsAnalysis?.score || 0)}">${pageData.robotsAnalysis?.score || 0}</span></div>
+              <div><b>Crawlability</b> <span class="score ${scoreClass(pageData.crawlability?.score || 0)}">${pageData.crawlability?.score || 0}</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-details-section">
+          <h4>Key Issues & Recommendations</h4>
+      `;
+
+      // Collect top issues from all modules
+      const allIssues = [];
+      Object.entries(pageData).forEach(([moduleName, module]) => {
+        if (module && module.issues && Array.isArray(module.issues)) {
+          module.issues.forEach(issue => {
+            allIssues.push({ module: moduleName, text: issue.message || issue });
+          });
+        }
+        if (module && module.recommendations && Array.isArray(module.recommendations)) {
+          module.recommendations.slice(0, 2).forEach(rec => {
+            allIssues.push({ module: moduleName, text: rec.message || rec, isRec: true });
+          });
+        }
+      });
+
+      if (allIssues.length > 0) {
+        summaryHtml += '<div class="list">';
+        allIssues.slice(0, 10).forEach(item => {
+          const severity = getSeverity(item.text);
+          const cls = item.isRec ? 'rec-enhanced' : 'issue-enhanced';
+          summaryHtml += `
+            <div class="${cls}">
+              <span class="severity-badge ${severity}">${severity}</span>
+              <span class="rec-text">${htmlEscape(item.text)}</span>
+            </div>
+          `;
+        });
+        if (allIssues.length > 10) {
+          summaryHtml += `<div class="muted">+${allIssues.length - 10} more items...</div>`;
+        }
+        summaryHtml += '</div>';
+      } else {
+        summaryHtml += '<div class="rec">✅ No significant issues found.</div>';
+      }
+
+      summaryHtml += '</div>';
+
+      return summaryHtml;
+    }
+
+    // Expand all pages button
+    document.addEventListener('click', (e) => {
+      if (e.target.id === 'expandAllPages') {
+        const allBodies = $$('.page-result-body');
+        const allHeaders = $$('.page-result-header');
+        const btn = $('#expandAllPages');
+        const allExpanded = allBodies.every(b => b.style.display === 'block');
+
+        allBodies.forEach(b => b.style.display = allExpanded ? 'none' : 'block');
+        allHeaders.forEach(h => h.classList.toggle('expanded', !allExpanded));
+        btn.textContent = allExpanded ? 'Expand All ▼' : 'Collapse All ▲';
+      }
+    });
 
     // Tab switching
     $$('.tab').forEach(tab => {
